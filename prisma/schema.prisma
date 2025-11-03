@@ -1,0 +1,198 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Упрощенная модель пользователя для чата
+model User {
+  id            String      @id @default(cuid())
+  email         String      @unique
+  phone         String?
+  name          String
+  avatar        String?
+  online        Boolean     @default(false)
+  lastActiveAt  DateTime    @default(now())
+  karma         Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // Матчи
+  matches1      Match[]     @relation("UserMatches")
+  matches2      Match[]     @relation("MatchedWith")
+
+  // Сообщения
+  messagesSent      Message[]         @relation("MessageSender")
+  messagesReceived  Message[]         @relation("MessageReceiver")
+  
+  // Реакции на сообщения
+  reactions         MessageReaction[]
+  
+  // Реакции на пользователей (лайки/блокировки)
+  reactionsGiven    UserReaction[]    @relation("UserGivesReaction")
+  reactionsReceived UserReaction[]    @relation("UserReceivesReaction")
+  
+  // Доска объявлений
+  boardPosts        BoardPost[]       @relation("BoardPostAuthor")
+  boardResponses    BoardResponse[]   @relation("BoardResponder")
+  selectedForPosts  BoardPost[]       @relation("SelectedResponder")
+  savedPosts        SavedPost[]       @relation("UserSavedPosts")
+
+  @@index([email])
+}
+
+// Матчи (взаимные связи между пользователями)
+model Match {
+  id          String   @id @default(cuid())
+  user1Id     String
+  user1       User     @relation("UserMatches", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2Id     String
+  user2       User     @relation("MatchedWith", fields: [user2Id], references: [id], onDelete: Cascade)
+
+  matchedAt   DateTime @default(now())
+  active      Boolean  @default(true)
+
+  // Чат
+  messages    Message[]
+
+  @@unique([user1Id, user2Id])
+  @@index([user1Id])
+  @@index([user2Id])
+  @@index([active])
+}
+
+// Сообщения
+model Message {
+  id          String   @id @default(cuid())
+  matchId     String
+  match       Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  senderId    String
+  sender      User     @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId  String
+  receiver    User     @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  content     String
+  read        Boolean  @default(false)
+  readAt      DateTime?
+
+  reactions   MessageReaction[]
+
+  createdAt   DateTime @default(now())
+
+  @@index([matchId])
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([createdAt])
+}
+
+// Реакции на сообщения
+model MessageReaction {
+  id          String   @id @default(cuid())
+  messageId   String
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emoji       String   // 👍, ❤️, 😂, 😮, 😢, 😡
+
+  createdAt   DateTime @default(now())
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@index([userId])
+}
+
+// Реакции пользователей (лайки и блокировки)
+model UserReaction {
+  id          String   @id @default(cuid())
+  fromUserId  String
+  fromUser    User     @relation("UserGivesReaction", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUserId    String
+  toUser      User     @relation("UserReceivesReaction", fields: [toUserId], references: [id], onDelete: Cascade)
+  
+  type        String   // 'like' или 'block'
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([fromUserId, toUserId])
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@index([type])
+}
+
+// Доска объявлений - посты
+model BoardPost {
+  id          String   @id @default(cuid())
+  authorId    String
+  author      User     @relation("BoardPostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  
+  type        String   // 'need_nanny', 'can_babysit', 'playdate', 'looking_for_friends', 'offer_help', 'need_help', 'coffee_meetup', 'other'
+  title       String?
+  description String
+  
+  city        String
+  district    String?
+  
+  dateFrom    DateTime?
+  dateUntil   DateTime?
+  
+  status      String   @default("active") // 'active', 'closed'
+  viewCount   Int      @default(0)
+  
+  // Выбранный исполнитель (если есть)
+  selectedResponderId String?
+  selectedResponder   User?    @relation("SelectedResponder", fields: [selectedResponderId], references: [id], onDelete: SetNull)
+  
+  responses   BoardResponse[]
+  savedBy     SavedPost[]     @relation("SavedByUsers")
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([authorId])
+  @@index([type])
+  @@index([city])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Отклики на объявления
+model BoardResponse {
+  id          String   @id @default(cuid())
+  postId      String
+  post        BoardPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  
+  responderId String
+  responder   User     @relation("BoardResponder", fields: [responderId], references: [id], onDelete: Cascade)
+  
+  message     String
+  contacted   Boolean  @default(false)
+  
+  createdAt   DateTime @default(now())
+
+  @@index([postId])
+  @@index([responderId])
+  @@index([createdAt])
+}
+
+// Сохраненные объявления (избранное)
+model SavedPost {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation("UserSavedPosts", fields: [userId], references: [id], onDelete: Cascade)
+  postId    String
+  post      BoardPost @relation("SavedByUsers", fields: [postId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+
+  @@unique([userId, postId])
+  @@index([userId])
+  @@index([postId])
+}
