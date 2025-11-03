@@ -116,32 +116,49 @@ export default function ProfilePage() {
       const email = localStorage.getItem('currentUserEmail');
       
       if (!email) {
+        console.log('No email in localStorage, redirecting to home');
         router.push('/');
         return;
       }
       
       try {
+        console.log('Fetching user data for:', email);
         // Fetch user data from API
         const response = await fetch(`/api/users/current?email=${encodeURIComponent(email)}`);
         
         if (!response.ok) {
-          console.error('Failed to fetch user data');
+          console.error('Failed to fetch user data, status:', response.status);
+          const errorData = await response.json().catch(() => ({}));
+          console.error('Error details:', errorData);
+          
+          // Очищаем localStorage и редиректим
+          localStorage.removeItem('currentUserEmail');
+          localStorage.removeItem('userType');
           router.push('/');
           return;
         }
 
         const data = await response.json();
+        console.log('User data received:', data.user);
         
-        // Сохраняем userType в localStorage, если его там нет
-        if (data.user.userType) {
-          localStorage.setItem('userType', data.user.userType);
+        if (!data.user || !data.user.userType) {
+          console.error('User data is incomplete:', data);
+          localStorage.removeItem('currentUserEmail');
+          localStorage.removeItem('userType');
+          router.push('/');
+          return;
         }
+        
+        // Сохраняем userType в localStorage
+        localStorage.setItem('userType', data.user.userType);
         
         setCurrentUser(data.user);
         setUserType(data.user.userType);
         setIsLoading(false);
       } catch (error) {
         console.error('Error loading user data:', error);
+        localStorage.removeItem('currentUserEmail');
+        localStorage.removeItem('userType');
         router.push('/');
       }
     }

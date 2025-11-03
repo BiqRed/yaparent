@@ -11,9 +11,34 @@ export default function Home() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const currentUserEmail = localStorage.getItem('currentUserEmail');
-      if (currentUserEmail) {
-        // User is logged in, redirect to profile
+      const userType = localStorage.getItem('userType');
+      
+      console.log('Home page - checking auth:', { currentUserEmail, userType });
+      
+      if (currentUserEmail && userType) {
+        // User is logged in with complete data, redirect to profile
+        console.log('Redirecting to profile');
         router.push('/profile');
+      } else if (currentUserEmail && !userType) {
+        // User has email but no type - let's try to get it from API
+        console.log('User has email but no type, fetching from API');
+        fetch(`/api/users/current?email=${encodeURIComponent(currentUserEmail)}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.user && data.user.userType) {
+              localStorage.setItem('userType', data.user.userType);
+              router.push('/profile');
+            } else {
+              // Invalid user, clear localStorage
+              localStorage.removeItem('currentUserEmail');
+              localStorage.removeItem('userType');
+            }
+          })
+          .catch(err => {
+            console.error('Error fetching user:', err);
+            localStorage.removeItem('currentUserEmail');
+            localStorage.removeItem('userType');
+          });
       }
     }
   }, [router]);

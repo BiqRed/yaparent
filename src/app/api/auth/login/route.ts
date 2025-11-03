@@ -53,8 +53,12 @@ export async function POST(request: NextRequest) {
     }
 
     // TODO: In production, use bcrypt to compare hashed passwords
-    // For now, comparing plain text (as per current implementation)
-    if (user.password !== password) {
+    // For now, comparing plain text or simple hashed format
+    const isPasswordValid =
+      user.password === password ||
+      user.password === `hashed_${password}`;
+    
+    if (!isPasswordValid) {
       return NextResponse.json(
         { error: 'Invalid email or password' },
         { status: 401 }
