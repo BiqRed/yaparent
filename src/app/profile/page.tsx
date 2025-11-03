@@ -114,9 +114,8 @@ export default function ProfilePage() {
   const loadUserData = async () => {
     if (typeof window !== 'undefined') {
       const email = localStorage.getItem('currentUserEmail');
-      const storedType = localStorage.getItem('userType') as UserType;
       
-      if (!email || !storedType) {
+      if (!email) {
         router.push('/');
         return;
       }
@@ -132,6 +131,12 @@ export default function ProfilePage() {
         }
 
         const data = await response.json();
+        
+        // Сохраняем userType в localStorage, если его там нет
+        if (data.user.userType) {
+          localStorage.setItem('userType', data.user.userType);
+        }
+        
         setCurrentUser(data.user);
         setUserType(data.user.userType);
         setIsLoading(false);
