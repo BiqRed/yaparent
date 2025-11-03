@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import BottomNav from '@/components/BottomNav';
 import {
@@ -51,7 +51,7 @@ const calculateAge = (birthDate: string): number => {
   return age;
 };
 
-export default function ConnectionsPage() {
+function ConnectionsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab') as TabType | null;
@@ -655,5 +655,26 @@ export default function ConnectionsPage() {
 
       <BottomNav />
     </div>
+  );
+}
+
+export default function ConnectionsPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex flex-col min-h-screen bg-gray-50 pb-16">
+        <header className="bg-white border-b border-gray-200 px-4 py-3">
+          <h1 className="text-xl font-bold text-gray-900">Мои связи</h1>
+        </header>
+        <main className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Загрузка...</p>
+          </div>
+        </main>
+        <BottomNav />
+      </div>
+    }>
+      <ConnectionsPageContent />
+    </Suspense>
   );
 }
