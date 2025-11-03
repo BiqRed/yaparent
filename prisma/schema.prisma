@@ -10,16 +10,35 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Упрощенная модель пользователя для чата
+// Полная модель пользователя
 model User {
   id            String      @id @default(cuid())
   email         String      @unique
   phone         String?
+  password      String      // Хешированный пароль
   name          String
   avatar        String?
+  photoUrl      String?     // URL или base64 фото профиля
   online        Boolean     @default(false)
   lastActiveAt  DateTime    @default(now())
   karma         Int         @default(0)
+  rating        Float       @default(0)
+  
+  // Профиль
+  userType      String      // 'parent' или 'nanny'
+  location      String?
+  birthDate     String?
+  bio           String?
+  interests     String?     // JSON array
+  kids          String?     // JSON array
+  
+  // Геолокация
+  latitude      Float?
+  longitude     Float?
+  
+  // Друзья (JSON array of emails)
+  friends       String?
+  
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
@@ -43,8 +62,50 @@ model User {
   boardResponses    BoardResponse[]   @relation("BoardResponder")
   selectedForPosts  BoardPost[]       @relation("SelectedResponder")
   savedPosts        SavedPost[]       @relation("UserSavedPosts")
+  
+  // Отзывы
+  reviews           Review[]          @relation("UserReviews")
+  reviewsGiven      Review[]          @relation("ReviewAuthor")
+  
+  // Бронирования
+  bookingsAsClient  Booking[]         @relation("ClientBookings")
+  bookingsAsNanny   Booking[]         @relation("NannyBookings")
 
   @@index([email])
+  @@index([userType])
+  @@index([location])
+}
+
+// Отзывы
+model Review {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation("UserReviews", fields: [userId], references: [id], onDelete: Cascade)
+  fromUserId      String
+  fromUser        User     @relation("ReviewAuthor", fields: [fromUserId], references: [id], onDelete: Cascade)
+  fromUserName    String
+  rating          Int
+  comment         String
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+  @@index([fromUserId])
+}
+
+// Бронирования
+model Booking {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      User     @relation("ClientBookings", fields: [clientId], references: [id], onDelete: Cascade)
+  nannyId     String
+  nanny       User     @relation("NannyBookings", fields: [nannyId], references: [id], onDelete: Cascade)
+  date        String
+  status      String   // 'active', 'completed', 'cancelled'
+  createdAt   DateTime @default(now())
+
+  @@index([clientId])
+  @@index([nannyId])
+  @@index([status])
 }
 
 // Матчи (взаимные связи между пользователями)

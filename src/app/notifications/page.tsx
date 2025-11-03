@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   BellIcon,
@@ -14,23 +14,62 @@ import {
 import { useRouter } from 'next/navigation';
 
 interface Notification {
-  id: number;
+  id: string;
   type: 'match' | 'message' | 'event' | 'board' | 'system';
   title: string;
   message: string;
   time: string;
   read: boolean;
   avatar?: string;
-  userEmail?: string; // Email пользователя для перехода на профиль
-  link?: string; // Ссылка для перехода
+  userEmail?: string;
+  link?: string;
 }
-
-// Notifications will be loaded from the database
-const notifications: Notification[] = [];
 
 export default function NotificationsPage() {
   const router = useRouter();
-  const [notificationList, setNotificationList] = useState(notifications);
+  const [notificationList, setNotificationList] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadNotifications();
+  }, []);
+
+  const loadNotifications = async () => {
+    try {
+      const currentUserEmail = localStorage.getItem('currentUserEmail');
+      if (!currentUserEmail) {
+        router.push('/login');
+        return;
+      }
+
+      // Загружаем чаты с непрочитанными сообщениями
+      const response = await fetch(`/api/chats?currentUserEmail=${encodeURIComponent(currentUserEmail)}`);
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Преобразуем чаты в уведомления
+        const notifications: Notification[] = data.chats
+          ?.filter((chat: any) => chat.unread > 0)
+          .map((chat: any) => ({
+            id: chat.id,
+            type: 'message' as const,
+            title: chat.name,
+            message: chat.lastMessage || 'Новое сообщение',
+            time: chat.time,
+            read: false,
+            avatar: chat.avatar,
+            userEmail: chat.userEmail,
+            link: `/chats/${chat.id}`,
+          })) || [];
+        
+        setNotificationList(notifications);
+      }
+    } catch (error) {
+      console.error('Error loading notifications:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -54,6 +93,17 @@ export default function NotificationsPage() {
   };
 
   const unreadCount = notificationList.filter(n => !n.read).length;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Загрузка уведомлений...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">

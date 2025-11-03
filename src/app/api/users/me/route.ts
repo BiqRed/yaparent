@@ -1,18 +1,23 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
 // Отключаем кэширование для этого роута
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// Временный ID текущего пользователя
-const CURRENT_USER_EMAIL = 'me@example.com';
-
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    // Получаем email из query параметров
+    const { searchParams } = new URL(request.url);
+    const email = searchParams.get('email');
+    
+    if (!email) {
+      return NextResponse.json({ error: 'Email is required' }, { status: 400 });
+    }
+    
     // Получаем текущего пользователя
     const currentUser = await prisma.user.findUnique({
-      where: { email: CURRENT_USER_EMAIL },
+      where: { email },
       select: {
         id: true,
         name: true,

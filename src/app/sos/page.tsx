@@ -93,7 +93,13 @@ export default function BoardPage() {
     const fetchCurrentUser = async () => {
       try {
         console.log('Fetching current user...');
-        const response = await fetch('/api/users/me');
+        const currentUserEmail = localStorage.getItem('currentUserEmail');
+        if (!currentUserEmail) {
+          console.error('No user email found in localStorage');
+          return;
+        }
+        
+        const response = await fetch(`/api/users/me?email=${encodeURIComponent(currentUserEmail)}`);
         const data = await response.json();
         console.log('Current user response:', data);
         if (data.user && data.user.id) {

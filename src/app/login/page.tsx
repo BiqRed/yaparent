@@ -32,8 +32,8 @@ export default function LoginPage() {
   // Check if user is already logged in
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const currentUser = localStorage.getItem('currentUser');
-      if (currentUser) {
+      const currentUserEmail = localStorage.getItem('currentUserEmail');
+      if (currentUserEmail) {
         // User is already logged in, redirect to profile
         router.push('/profile');
       }
@@ -80,59 +80,51 @@ export default function LoginPage() {
 
     setIsLoading(true);
 
-    // Simulate API call - check user credentials
-    setTimeout(() => {
-      if (typeof window !== 'undefined') {
-        // Get registered users
-        const registeredUsersJson = localStorage.getItem('registeredUsers');
-        const registeredUsers = registeredUsersJson ? JSON.parse(registeredUsersJson) : [];
-        
-        // Find user by email
-        const user = registeredUsers.find((u: RegisteredUser) => u.email === formData.email);
-        
-        if (!user) {
-          setIsLoading(false);
-          setErrors({ email: 'Пользователь с таким email не найден' });
-          return;
-        }
-        
-        // Check password
-        if (user.password !== formData.password) {
-          setIsLoading(false);
-          setErrors({ password: 'Неверный пароль' });
-          return;
-        }
-        
-        // Login successful - save user info
-        localStorage.setItem('currentUser', JSON.stringify(user));
-        localStorage.setItem('userType', user.userType);
-        
-        // Синхронизируем пользователя с базой данных для чатов
-        fetch('/api/users/register', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: user.email,
-            name: user.name,
-            phone: user.phone,
-            photoUrl: '👤',
-          }),
-        }).catch((error) => {
-          console.error('Error syncing user to database:', error);
-        });
-        
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
         setIsLoading(false);
-        
-        // Redirect based on user type
-        if (user.userType === 'nanny') {
-          router.push('/nanny');
+        if (response.status === 401) {
+          setErrors({ password: data.error || 'Неверный email или пароль' });
         } else {
-          router.push('/match');
+          setErrors({ email: data.error || 'Ошибка при входе' });
         }
+        return;
       }
-    }, 1500);
+
+      console.log('Login successful:', data.user);
+
+      // Save user email to localStorage (minimal data)
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('currentUserEmail', data.user.email);
+        localStorage.setItem('userType', data.user.userType);
+      }
+
+      setIsLoading(false);
+
+      // Redirect based on user type
+      if (data.user.userType === 'nanny') {
+        router.push('/nanny');
+      } else {
+        router.push('/match');
+      }
+    } catch (error) {
+      console.error('Error during login:', error);
+      setIsLoading(false);
+      setErrors({ email: 'Ошибка при входе. Попробуйте позже.' });
+    }
   };
 
   return (

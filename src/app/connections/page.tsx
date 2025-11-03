@@ -3,40 +3,53 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import BottomNav from '@/components/BottomNav';
-import { 
-  HeartIcon, 
-  ChatBubbleLeftIcon, 
-  NoSymbolIcon, 
+import {
+  HeartIcon,
+  ChatBubbleLeftIcon,
+  NoSymbolIcon,
   LockOpenIcon,
   XMarkIcon,
   UserGroupIcon,
   UsersIcon,
   FunnelIcon
 } from '@heroicons/react/24/solid';
-import { 
+import {
   HeartIcon as HeartOutlineIcon,
   NoSymbolIcon as NoSymbolOutlineIcon,
   UserGroupIcon as UserGroupOutlineIcon,
   UsersIcon as UsersOutlineIcon
 } from '@heroicons/react/24/outline';
+import { calculateDistance } from '@/lib/geolocation';
 
 interface Profile {
-  id: number;
+  id: string;
   name: string;
   age: number;
   email: string;
-  kids: Array<{ age: number; gender: string }>;
+  kids: Array<{ age: number; gender: string; name?: string }>;
   interests: string[];
   bio: string;
   distance: number;
   photo: string;
   location: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 type TabType = 'friends' | 'favorites' | 'blocked' | 'all';
 
-// Profiles will be loaded from the database
-const allProfiles: Profile[] = [];
+// Calculate age from birthDate
+const calculateAge = (birthDate: string): number => {
+  if (!birthDate) return 0;
+  const birth = new Date(birthDate);
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age--;
+  }
+  return age;
+};
 
 export default function ConnectionsPage() {
   const router = useRouter();
@@ -47,13 +60,14 @@ export default function ConnectionsPage() {
   const [favorites, setFavorites] = useState<Profile[]>([]);
   const [blocked, setBlocked] = useState<Profile[]>([]);
   const [allUsers, setAllUsers] = useState<Profile[]>([]);
-  const [likedProfiles, setLikedProfiles] = useState<number[]>([]);
-  const [blockedProfiles, setBlockedProfiles] = useState<number[]>([]);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
+  const [currentUserData, setCurrentUserData] = useState<any>(null);
   const [hideBlocked, setHideBlocked] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Устанавливаем вкладку из URL параметра
+    // Set tab from URL parameter
     if (tabParam && ['friends', 'favorites', 'blocked', 'all'].includes(tabParam)) {
       setActiveTab(tabParam);
     }
@@ -64,133 +78,182 @@ export default function ConnectionsPage() {
   }, []);
 
   const loadConnections = async () => {
-    // Загружаем избранных
-    const storedLikes = localStorage.getItem('userLikes');
-    if (storedLikes) {
-      const likedIds = JSON.parse(storedLikes);
-      setLikedProfiles(likedIds);
-      const likedProfiles = allProfiles.filter(profile => likedIds.includes(profile.id));
-      setFavorites(likedProfiles);
+    if (typeof window === 'undefined') return;
+
+    const email = localStorage.getItem('currentUserEmail');
+    if (!email) {
+      router.push('/login');
+      return;
     }
 
-    // Загружаем заблокированных
-    const storedBlocked = localStorage.getItem('userBlocked');
-    if (storedBlocked) {
-      const blockedIds = JSON.parse(storedBlocked);
-      setBlockedProfiles(blockedIds);
-      const blockedProfilesList = allProfiles.filter(profile => blockedIds.includes(profile.id));
-      setBlocked(blockedProfilesList);
-      
-      // Обновляем список всех пользователей с учетом фильтра
-      updateAllUsersProfiles(blockedIds, hideBlocked);
-    } else {
-      updateAllUsersProfiles([], hideBlocked);
-    }
+    setCurrentUserEmail(email);
 
-    // Друзья - это те, кто добавлен в друзья через localStorage
-    const currentUserJson = localStorage.getItem('currentUser');
-    if (currentUserJson) {
-      const currentUser = JSON.parse(currentUserJson);
-      const friendEmails = currentUser.friends || [];
+    try {
+      // Load current user data
+      const currentUserResponse = await fetch(`/api/users/current?email=${encodeURIComponent(email)}`);
+      if (!currentUserResponse.ok) {
+        router.push('/login');
+        return;
+      }
+      const currentUserData = await currentUserResponse.json();
+      setCurrentUserData(currentUserData.user);
+
+      // Load all users
+      const usersResponse = await fetch(`/api/users?currentUserEmail=${encodeURIComponent(email)}`);
+      if (!usersResponse.ok) {
+        console.error('Failed to load users');
+        setIsLoading(false);
+        return;
+      }
+
+      const usersData = await usersResponse.json();
       
-      // Фильтруем профили по email друзей
-      const friendProfiles = allProfiles.filter(profile => 
-        friendEmails.includes(profile.email)
-      );
+      // Convert to Profile format
+      const convertedProfiles: Profile[] = usersData.users.map((u: any) => {
+        let distance: number;
+        if (currentUserData.user.latitude && currentUserData.user.longitude && u.latitude && u.longitude) {
+          distance = calculateDistance(
+            currentUserData.user.latitude,
+            currentUserData.user.longitude,
+            u.latitude,
+            u.longitude
+          );
+        } else {
+          distance = 0;
+        }
+
+        return {
+          id: u.email,
+          name: u.name,
+          age: calculateAge(u.birthDate),
+          email: u.email,
+          kids: u.kids || [],
+          interests: u.interests || [],
+          bio: u.bio || 'Привет! Я ищу новых друзей среди родителей.',
+          distance,
+          photo: u.photoUrl || u.avatar || (u.userType === 'parent' ? '👨‍👩‍👧‍👦' : '👶'),
+          location: u.location,
+          latitude: u.latitude,
+          longitude: u.longitude,
+        };
+      });
+
+      // Load user reactions from database
+      const reactionsResponse = await fetch(`/api/users/reactions?email=${encodeURIComponent(email)}`);
+      let likedEmails: string[] = [];
+      let blockedEmails: string[] = [];
+      
+      if (reactionsResponse.ok) {
+        const reactionsData = await reactionsResponse.json();
+        likedEmails = reactionsData.likes || [];
+        blockedEmails = reactionsData.blocks || [];
+      }
+
+      // Set favorites
+      const favoritesProfiles = convertedProfiles.filter(p => likedEmails.includes(p.email));
+      setFavorites(favoritesProfiles);
+
+      // Set blocked
+      const blockedProfiles = convertedProfiles.filter(p => blockedEmails.includes(p.email));
+      setBlocked(blockedProfiles);
+
+      // Set all users (filtered by hideBlocked)
+      const allUsersFiltered = hideBlocked 
+        ? convertedProfiles.filter(p => !blockedEmails.includes(p.email))
+        : convertedProfiles;
+      setAllUsers(allUsersFiltered);
+
+      // Set friends (from user's friends list)
+      const friendEmails = currentUserData.user.friends || [];
+      const friendProfiles = convertedProfiles.filter(p => friendEmails.includes(p.email));
       setFriends(friendProfiles);
-    } else {
-      setFriends([]);
-    }
-  };
 
-  const updateAllUsersProfiles = (blocked: number[], hide: boolean) => {
-    let filtered = allProfiles;
-    
-    if (hide) {
-      filtered = allProfiles.filter(profile => !blocked.includes(profile.id));
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error loading connections:', error);
+      setIsLoading(false);
     }
-    
-    setAllUsers(filtered);
   };
 
   const handleToggleFilter = () => {
-    const newHideBlocked = !hideBlocked;
-    setHideBlocked(newHideBlocked);
-    updateAllUsersProfiles(blockedProfiles, newHideBlocked);
-  };
-
-  const handleLike = (profileId: number) => {
-    const newLikes = [...likedProfiles, profileId];
-    setLikedProfiles(newLikes);
-    localStorage.setItem('userLikes', JSON.stringify(newLikes));
+    setHideBlocked(!hideBlocked);
     loadConnections();
   };
 
-  const handleLikeToggle = (profileId: number) => {
-    if (likedProfiles.includes(profileId)) {
-      const newLikes = likedProfiles.filter(id => id !== profileId);
-      setLikedProfiles(newLikes);
-      localStorage.setItem('userLikes', JSON.stringify(newLikes));
-    } else {
-      const newLikes = [...likedProfiles, profileId];
-      setLikedProfiles(newLikes);
-      localStorage.setItem('userLikes', JSON.stringify(newLikes));
-    }
-    loadConnections();
-  };
-
-  const handleBlock = (profileId: number) => {
-    const newBlocked = [...blockedProfiles, profileId];
-    setBlockedProfiles(newBlocked);
-    localStorage.setItem('userBlocked', JSON.stringify(newBlocked));
-    
-    if (hideBlocked) {
-      setAllUsers(allUsers.filter(p => p.id !== profileId));
-    }
-    loadConnections();
-  };
-
-  const handleUnlike = async (profileId: number) => {
-    const storedLikes = localStorage.getItem('userLikes');
-    if (storedLikes) {
-      const likedIds = JSON.parse(storedLikes);
-      const updatedLikes = likedIds.filter((id: number) => id !== profileId);
-      localStorage.setItem('userLikes', JSON.stringify(updatedLikes));
+  const handleLikeToggle = async (profileEmail: string) => {
+    try {
+      const isLiked = favorites.some(f => f.email === profileEmail);
+      
+      if (isLiked) {
+        // Unlike
+        await fetch(`/api/users/reactions?fromEmail=${encodeURIComponent(currentUserEmail)}&toEmail=${encodeURIComponent(profileEmail)}`, {
+          method: 'DELETE',
+        });
+      } else {
+        // Like
+        await fetch('/api/users/reactions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fromEmail: currentUserEmail,
+            toEmail: profileEmail,
+            type: 'like',
+          }),
+        });
+      }
+      
       await loadConnections();
+    } catch (error) {
+      console.error('Error toggling like:', error);
     }
   };
 
-  const handleUnblock = async (profileId: number) => {
-    const storedBlocked = localStorage.getItem('userBlocked');
-    if (storedBlocked) {
-      const blockedIds = JSON.parse(storedBlocked);
-      const updatedBlocked = blockedIds.filter((id: number) => id !== profileId);
-      localStorage.setItem('userBlocked', JSON.stringify(updatedBlocked));
+  const handleBlock = async (profileEmail: string) => {
+    try {
+      await fetch('/api/users/reactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromEmail: currentUserEmail,
+          toEmail: profileEmail,
+          type: 'block',
+        }),
+      });
+      
       await loadConnections();
+    } catch (error) {
+      console.error('Error blocking user:', error);
+    }
+  };
+
+  const handleUnblock = async (profileEmail: string) => {
+    try {
+      await fetch(`/api/users/reactions?fromEmail=${encodeURIComponent(currentUserEmail)}&toEmail=${encodeURIComponent(profileEmail)}`, {
+        method: 'DELETE',
+      });
+      
+      await loadConnections();
+    } catch (error) {
+      console.error('Error unblocking user:', error);
     }
   };
 
   const handleRemoveFriend = async (profile: Profile) => {
-    const currentUserJson = localStorage.getItem('currentUser');
-    const registeredUsersJson = localStorage.getItem('registeredUsers');
-    
-    if (currentUserJson && registeredUsersJson) {
-      const currentUser = JSON.parse(currentUserJson);
-      const allUsers = JSON.parse(registeredUsersJson);
+    try {
+      // Update user's friends list in database
+      const updatedFriends = currentUserData.friends.filter((email: string) => email !== profile.email);
       
-      if (currentUser.friends) {
-        // Удаляем email друга из списка
-        currentUser.friends = currentUser.friends.filter((email: string) => email !== profile.email);
-        
-        // Обновляем в массиве всех пользователей
-        const currentUserIndex = allUsers.findIndex((u: any) => u.email === currentUser.email);
-        if (currentUserIndex !== -1) {
-          allUsers[currentUserIndex] = currentUser;
-          localStorage.setItem('registeredUsers', JSON.stringify(allUsers));
-          localStorage.setItem('currentUser', JSON.stringify(currentUser));
-          await loadConnections();
-        }
-      }
+      await fetch(`/api/users/${currentUserData.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          friends: updatedFriends,
+        }),
+      });
+      
+      await loadConnections();
+    } catch (error) {
+      console.error('Error removing friend:', error);
     }
   };
 
@@ -201,41 +264,39 @@ export default function ConnectionsPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ userEmail: profile.email }),
+        body: JSON.stringify({
+          userEmail: profile.email,
+          currentUserEmail: currentUserEmail,
+        }),
       });
 
       const data = await response.json();
 
       if (response.ok && data.matchId) {
-        // Добавляем пользователя в друзья, если его там еще нет
-        const currentUserJson = localStorage.getItem('currentUser');
-        const registeredUsersJson = localStorage.getItem('registeredUsers');
+        console.log('Chat created successfully, matchId:', data.matchId);
         
-        if (currentUserJson && registeredUsersJson) {
-          const currentUser = JSON.parse(currentUserJson);
-          const allUsers = JSON.parse(registeredUsersJson);
+        // Add user to friends if not already there
+        if (!currentUserData.friends.includes(profile.email)) {
+          const updatedFriends = [...currentUserData.friends, profile.email];
           
-          if (!currentUser.friends) {
-            currentUser.friends = [];
-          }
-          
-          if (!currentUser.friends.includes(profile.email)) {
-            currentUser.friends.push(profile.email);
-            
-            // Обновляем в массиве всех пользователей
-            const currentUserIndex = allUsers.findIndex((u: any) => u.email === currentUser.email);
-            if (currentUserIndex !== -1) {
-              allUsers[currentUserIndex] = currentUser;
-              localStorage.setItem('registeredUsers', JSON.stringify(allUsers));
-              localStorage.setItem('currentUser', JSON.stringify(currentUser));
-            }
-          }
+          await fetch(`/api/users/${currentUserData.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              friends: updatedFriends,
+            }),
+          });
         }
         
-        // Обновляем список друзей после создания чата
         await loadConnections();
+        
+        // Small delay to ensure database is updated
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        console.log('Navigating to chat:', `/chats/${data.matchId}`);
         router.push(`/chats/${data.matchId}`);
       } else {
+        console.error('Failed to create chat:', data);
         alert('Не удалось создать чат. Пользователь не найден в системе.');
       }
     } catch (error) {
@@ -251,216 +312,35 @@ export default function ConnectionsPage() {
     { id: 'all' as TabType, name: 'Все', icon: UsersIcon, count: allUsers.length },
   ];
 
-  const renderFriendCard = (profile: Profile) => (
-    <div 
-      key={profile.id}
-      className="bg-white rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-shadow"
-    >
-      <div className="flex gap-4 p-4">
-        {/* Photo */}
-        <div className="flex-shrink-0">
-          <div 
-            onClick={() => router.push(`/profile/${encodeURIComponent(profile.email)}`)}
-            className="w-24 h-24 rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-5xl cursor-pointer hover:opacity-80 transition-opacity"
-          >
-            {profile.photo}
-          </div>
-        </div>
+  const renderProfileCard = (profile: Profile, type: 'friend' | 'favorite' | 'blocked' | 'all') => {
+    const isLiked = favorites.some(f => f.email === profile.email);
+    const isBlocked = blocked.some(b => b.email === profile.email);
 
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2 mb-2">
-            <div>
-              <h3 
-                onClick={() => router.push(`/profile/${encodeURIComponent(profile.email)}`)}
-                className="text-lg font-bold text-gray-900 cursor-pointer hover:text-purple-600 transition-colors"
-              >
-                {profile.name}, {profile.age}
-              </h3>
-              <p className="text-sm text-gray-600">{profile.location}</p>
-              <p className="text-sm text-gray-500">📍 {profile.distance} км</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap mb-2">
-            {profile.kids.map((kid, idx) => (
-              <span key={idx} className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-xs">
-                {kid.gender === 'girl' ? '👧' : '👦'} {kid.age} {kid.age === 1 ? 'год' : kid.age < 5 ? 'года' : 'лет'}
-              </span>
-            ))}
-          </div>
-
-          <p className="text-sm text-gray-600 line-clamp-2 mb-3">
-            {profile.bio}
-          </p>
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => handleChat(profile)}
-              className="flex-1 bg-[#FF3B30] text-white px-4 py-2 rounded-lg font-medium hover:bg-[#E03329] transition-colors flex items-center justify-center gap-2"
-            >
-              <ChatBubbleLeftIcon className="w-4 h-4" />
-              Написать
-            </button>
-            <button
-              onClick={() => handleRemoveFriend(profile)}
-              className="px-4 py-2 border-2 border-gray-300 rounded-lg hover:border-red-500 hover:bg-red-50 transition-colors"
-              title="Убрать из друзей"
-            >
-              <XMarkIcon className="w-5 h-5 text-gray-600 hover:text-red-500" />
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderFavoriteCard = (profile: Profile) => (
-    <div 
-      key={profile.id}
-      className="bg-white rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-shadow"
-    >
-      <div className="flex gap-4 p-4">
-        {/* Photo */}
-        <div className="flex-shrink-0">
-          <div 
-            onClick={() => router.push(`/profile/${encodeURIComponent(profile.email)}`)}
-            className="w-24 h-24 rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-5xl cursor-pointer hover:opacity-80 transition-opacity"
-          >
-            {profile.photo}
-          </div>
-        </div>
-
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2 mb-2">
-            <div>
-              <h3 
-                onClick={() => router.push(`/profile/${encodeURIComponent(profile.email)}`)}
-                className="text-lg font-bold text-gray-900 cursor-pointer hover:text-purple-600 transition-colors"
-              >
-                {profile.name}, {profile.age}
-              </h3>
-              <p className="text-sm text-gray-600">{profile.location}</p>
-              <p className="text-sm text-gray-500">📍 {profile.distance} км</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap mb-2">
-            {profile.kids.map((kid, idx) => (
-              <span key={idx} className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-xs">
-                {kid.gender === 'girl' ? '👧' : '👦'} {kid.age} {kid.age === 1 ? 'год' : kid.age < 5 ? 'года' : 'лет'}
-              </span>
-            ))}
-          </div>
-
-          <p className="text-sm text-gray-600 line-clamp-2 mb-3">
-            {profile.bio}
-          </p>
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => handleChat(profile)}
-              className="flex-1 bg-[#FF3B30] text-white px-4 py-2 rounded-lg font-medium hover:bg-[#E03329] transition-colors flex items-center justify-center gap-2"
-            >
-              <ChatBubbleLeftIcon className="w-4 h-4" />
-              Написать
-            </button>
-            <button
-              onClick={() => handleUnlike(profile.id)}
-              className="px-4 py-2 border-2 border-gray-300 rounded-lg hover:border-red-500 hover:bg-red-50 transition-colors"
-              title="Убрать из избранного"
-            >
-              <XMarkIcon className="w-5 h-5 text-gray-600 hover:text-red-500" />
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderBlockedCard = (profile: Profile) => (
-    <div 
-      key={profile.id}
-      className="bg-white rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-shadow opacity-75"
-    >
-      <div className="flex gap-4 p-4">
-        {/* Photo */}
-        <div className="flex-shrink-0">
-          <div 
-            onClick={() => router.push(`/profile/${encodeURIComponent(profile.email)}`)}
-            className="w-24 h-24 rounded-xl bg-gradient-to-br from-gray-300 to-gray-400 flex items-center justify-center text-5xl relative cursor-pointer hover:opacity-80 transition-opacity"
-          >
-            {profile.photo}
-            <div className="absolute inset-0 bg-black/20 rounded-xl flex items-center justify-center">
-              <NoSymbolIcon className="w-8 h-8 text-white" />
-            </div>
-          </div>
-        </div>
-
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2 mb-2">
-            <div>
-              <h3 
-                onClick={() => router.push(`/profile/${encodeURIComponent(profile.email)}`)}
-                className="text-lg font-bold text-gray-900 cursor-pointer hover:text-purple-600 transition-colors"
-              >
-                {profile.name}, {profile.age}
-              </h3>
-              <p className="text-sm text-gray-600">{profile.location}</p>
-              <p className="text-sm text-gray-500">📍 {profile.distance} км</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap mb-2">
-            {profile.kids.map((kid, idx) => (
-              <span key={idx} className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-xs">
-                {kid.gender === 'girl' ? '👧' : '👦'} {kid.age} {kid.age === 1 ? 'год' : kid.age < 5 ? 'года' : 'лет'}
-              </span>
-            ))}
-          </div>
-
-          <p className="text-sm text-gray-500 line-clamp-2 mb-3">
-            {profile.bio}
-          </p>
-
-          {/* Action Button */}
-          <button
-            onClick={() => handleUnblock(profile.id)}
-            className="w-full bg-green-500 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-600 transition-colors flex items-center justify-center gap-2"
-          >
-            <LockOpenIcon className="w-4 h-4" />
-            Разблокировать
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderAllUsersCard = (profile: Profile) => {
-    const liked = likedProfiles.includes(profile.id);
-    const blocked = blockedProfiles.includes(profile.id);
-    
     return (
       <div 
         key={profile.id}
         className={`bg-white rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-all ${
-          blocked ? 'opacity-60 border-2 border-red-200' : ''
+          isBlocked && type === 'all' ? 'opacity-60 border-2 border-red-200' : ''
         }`}
       >
         <div className="flex gap-4 p-4">
           {/* Photo */}
           <div className="flex-shrink-0">
-            <div 
+            <div
               onClick={() => router.push(`/profile/${encodeURIComponent(profile.email)}`)}
-              className="w-24 h-24 rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-5xl relative cursor-pointer hover:opacity-80 transition-opacity"
+              className={`w-24 h-24 rounded-xl ${isBlocked && type === 'blocked' ? 'bg-gradient-to-br from-gray-300 to-gray-400' : 'bg-gradient-to-br from-purple-400 to-pink-400'} flex items-center justify-center text-5xl relative cursor-pointer hover:opacity-80 transition-opacity overflow-hidden`}
             >
-              {profile.photo}
-              {blocked && (
-                <div className="absolute inset-0 bg-black/30 rounded-xl flex items-center justify-center">
+              {profile.photo.startsWith('data:') || profile.photo.startsWith('http') ? (
+                <img
+                  src={profile.photo}
+                  alt={profile.name}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="text-5xl">{profile.photo}</div>
+              )}
+              {isBlocked && (
+                <div className="absolute inset-0 bg-black/20 rounded-xl flex items-center justify-center">
                   <NoSymbolIcon className="w-8 h-8 text-white" />
                 </div>
               )}
@@ -476,43 +356,91 @@ export default function ConnectionsPage() {
                   className="text-lg font-bold text-gray-900 cursor-pointer hover:text-purple-600 transition-colors"
                 >
                   {profile.name}, {profile.age}
-                  {blocked && (
+                  {isBlocked && type === 'all' && (
                     <span className="ml-2 text-xs font-normal text-red-500">
                       (заблокирован)
                     </span>
                   )}
                 </h3>
                 <p className="text-sm text-gray-600">{profile.location}</p>
-                <p className="text-sm text-gray-500">📍 {profile.distance} км</p>
+                <p className="text-sm text-gray-500">📍 {profile.distance > 0 ? `${profile.distance} км` : 'Рядом'}</p>
               </div>
             </div>
 
             <div className="flex items-center gap-2 flex-wrap mb-2">
               {profile.kids.map((kid, idx) => (
-                <span key={idx} className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-xs">
+                <span key={idx} className={`px-2 py-0.5 rounded-full text-xs ${type === 'blocked' ? 'bg-gray-100 text-gray-600' : 'bg-purple-100 text-purple-700'}`}>
                   {kid.gender === 'girl' ? '👧' : '👦'} {kid.age} {kid.age === 1 ? 'год' : kid.age < 5 ? 'года' : 'лет'}
                 </span>
               ))}
             </div>
 
-            <p className="text-sm text-gray-600 line-clamp-2 mb-3">
+            <p className={`text-sm line-clamp-2 mb-3 ${type === 'blocked' ? 'text-gray-500' : 'text-gray-600'}`}>
               {profile.bio}
             </p>
 
             {/* Action Buttons */}
             <div className="flex items-center gap-2">
-              {!blocked ? (
+              {type === 'friend' && (
                 <>
                   <button
-                    onClick={() => handleLikeToggle(profile.id)}
+                    onClick={() => handleChat(profile)}
+                    className="flex-1 bg-[#FF3B30] text-white px-4 py-2 rounded-lg font-medium hover:bg-[#E03329] transition-colors flex items-center justify-center gap-2"
+                  >
+                    <ChatBubbleLeftIcon className="w-4 h-4" />
+                    Написать
+                  </button>
+                  <button
+                    onClick={() => handleRemoveFriend(profile)}
+                    className="px-4 py-2 border-2 border-gray-300 rounded-lg hover:border-red-500 hover:bg-red-50 transition-colors"
+                    title="Убрать из друзей"
+                  >
+                    <XMarkIcon className="w-5 h-5 text-gray-600 hover:text-red-500" />
+                  </button>
+                </>
+              )}
+              
+              {type === 'favorite' && (
+                <>
+                  <button
+                    onClick={() => handleChat(profile)}
+                    className="flex-1 bg-[#FF3B30] text-white px-4 py-2 rounded-lg font-medium hover:bg-[#E03329] transition-colors flex items-center justify-center gap-2"
+                  >
+                    <ChatBubbleLeftIcon className="w-4 h-4" />
+                    Написать
+                  </button>
+                  <button
+                    onClick={() => handleLikeToggle(profile.email)}
+                    className="px-4 py-2 border-2 border-gray-300 rounded-lg hover:border-red-500 hover:bg-red-50 transition-colors"
+                    title="Убрать из избранного"
+                  >
+                    <XMarkIcon className="w-5 h-5 text-gray-600 hover:text-red-500" />
+                  </button>
+                </>
+              )}
+              
+              {type === 'blocked' && (
+                <button
+                  onClick={() => handleUnblock(profile.email)}
+                  className="w-full bg-green-500 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-600 transition-colors flex items-center justify-center gap-2"
+                >
+                  <LockOpenIcon className="w-4 h-4" />
+                  Разблокировать
+                </button>
+              )}
+              
+              {type === 'all' && !isBlocked && (
+                <>
+                  <button
+                    onClick={() => handleLikeToggle(profile.email)}
                     className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
-                      liked 
+                      isLiked 
                         ? 'bg-[#FF3B30] text-white hover:bg-[#E03329]' 
                         : 'border-2 border-[#FF3B30] text-[#FF3B30] hover:bg-[#FF3B30] hover:text-white'
                     }`}
                   >
                     <HeartIcon className="w-4 h-4" />
-                    {liked ? 'В избранном' : 'Добавить'}
+                    {isLiked ? 'В избранном' : 'Добавить'}
                   </button>
                   <button
                     onClick={() => handleChat(profile)}
@@ -522,16 +450,18 @@ export default function ConnectionsPage() {
                     <ChatBubbleLeftIcon className="w-5 h-5 text-gray-600" />
                   </button>
                   <button
-                    onClick={() => handleBlock(profile.id)}
+                    onClick={() => handleBlock(profile.email)}
                     className="px-4 py-2 border-2 border-gray-300 rounded-lg hover:border-red-500 hover:bg-red-50 transition-colors"
                     title="Заблокировать"
                   >
                     <NoSymbolIcon className="w-5 h-5 text-gray-600 hover:text-red-500" />
                   </button>
                 </>
-              ) : (
+              )}
+              
+              {type === 'all' && isBlocked && (
                 <button
-                  onClick={() => handleUnblock(profile.id)}
+                  onClick={() => handleUnblock(profile.email)}
                   className="w-full bg-green-500 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-600 transition-colors"
                 >
                   Разблокировать
@@ -586,18 +516,22 @@ export default function ConnectionsPage() {
     }
   };
 
-  const renderCard = (profile: Profile) => {
-    switch (activeTab) {
-      case 'friends':
-        return renderFriendCard(profile);
-      case 'favorites':
-        return renderFavoriteCard(profile);
-      case 'blocked':
-        return renderBlockedCard(profile);
-      case 'all':
-        return renderAllUsersCard(profile);
-    }
-  };
+  if (isLoading) {
+    return (
+      <div className="flex flex-col min-h-screen bg-gray-50 pb-16">
+        <header className="bg-white border-b border-gray-200 px-4 py-3">
+          <h1 className="text-xl font-bold text-gray-900">Мои связи</h1>
+        </header>
+        <main className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Загрузка...</p>
+          </div>
+        </main>
+        <BottomNav />
+      </div>
+    );
+  }
 
   const currentList = getCurrentList();
   const emptyState = getEmptyState();
@@ -655,7 +589,7 @@ export default function ConnectionsPage() {
                 />
               </button>
             </div>
-            {!hideBlocked && blockedProfiles.length > 0 && (
+            {!hideBlocked && blocked.length > 0 && (
               <p className="text-xs text-gray-500 mt-2">
                 Заблокированные профили помечены
               </p>
@@ -700,7 +634,7 @@ export default function ConnectionsPage() {
             {emptyState.icon}
             <h2 className="text-xl font-semibold text-gray-400 mb-2">{emptyState.title}</h2>
             <p className="text-gray-400 text-center">{emptyState.description}</p>
-            {activeTab === 'all' && hideBlocked && blockedProfiles.length > 0 && (
+            {activeTab === 'all' && hideBlocked && blocked.length > 0 && (
               <button
                 onClick={handleToggleFilter}
                 className="mt-4 text-[#FF3B30] font-medium"
@@ -711,7 +645,10 @@ export default function ConnectionsPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {currentList.map((profile) => renderCard(profile))}
+            {currentList.map((profile) => {
+              const cardType = activeTab === 'friends' ? 'friend' : activeTab === 'favorites' ? 'favorite' : activeTab;
+              return renderProfileCard(profile, cardType as 'friend' | 'favorite' | 'blocked' | 'all');
+            })}
           </div>
         )}
       </main>
@@ -720,4 +657,3 @@ export default function ConnectionsPage() {
     </div>
   );
 }
-

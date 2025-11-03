@@ -33,7 +33,16 @@ export default function ChatsPage() {
     try {
       setLoading(true);
       console.log('Fetching chats from API...');
-      const response = await fetch('/api/chats', {
+      
+      // Получаем email текущего пользователя из localStorage
+      const currentUserEmail = localStorage.getItem('currentUserEmail');
+      if (!currentUserEmail) {
+        console.error('User email not found in localStorage');
+        setLoading(false);
+        return;
+      }
+      
+      const response = await fetch(`/api/chats?currentUserEmail=${encodeURIComponent(currentUserEmail)}`, {
         cache: 'no-store',
         headers: {
           'Cache-Control': 'no-cache',
@@ -174,8 +183,16 @@ export default function ChatsPage() {
               <div className="relative">
                 {chat.userEmail ? (
                   <Link href={`/profile/${encodeURIComponent(chat.userEmail)}`}>
-                    <div className="w-14 h-14 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center text-2xl cursor-pointer hover:opacity-80 transition-opacity">
-                      {chat.avatar}
+                    <div className="w-14 h-14 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center text-2xl cursor-pointer hover:opacity-80 transition-opacity overflow-hidden">
+                      {chat.avatar && (chat.avatar.startsWith('http') || chat.avatar.startsWith('data:')) ? (
+                        <img src={chat.avatar} alt={chat.name} className="w-full h-full object-cover" />
+                      ) : chat.avatar && /[\p{Emoji}]/u.test(chat.avatar) ? (
+                        chat.avatar
+                      ) : (
+                        <span className="text-white font-bold text-lg">
+                          {chat.name?.charAt(0)?.toUpperCase() || '?'}
+                        </span>
+                      )}
                     </div>
                     {chat.online && (
                       <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white" />
@@ -183,8 +200,16 @@ export default function ChatsPage() {
                   </Link>
                 ) : (
                   <>
-                    <div className="w-14 h-14 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center text-2xl">
-                      {chat.avatar}
+                    <div className="w-14 h-14 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center text-2xl overflow-hidden">
+                      {chat.avatar && (chat.avatar.startsWith('http') || chat.avatar.startsWith('data:')) ? (
+                        <img src={chat.avatar} alt={chat.name} className="w-full h-full object-cover" />
+                      ) : chat.avatar && /[\p{Emoji}]/u.test(chat.avatar) ? (
+                        chat.avatar
+                      ) : (
+                        <span className="text-white font-bold text-lg">
+                          {chat.name?.charAt(0)?.toUpperCase() || '?'}
+                        </span>
+                      )}
                     </div>
                     {chat.online && (
                       <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white" />
@@ -261,8 +286,16 @@ export default function ChatsPage() {
                       className="w-full p-4 hover:bg-gray-50 transition-colors flex items-center gap-3"
                     >
                       <div className="relative">
-                        <div className="w-12 h-12 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center text-xl">
-                          {user.avatar}
+                        <div className="w-12 h-12 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center text-xl overflow-hidden">
+                          {user.avatar && (user.avatar.startsWith('http') || user.avatar.startsWith('data:')) ? (
+                            <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+                          ) : user.avatar && /[\p{Emoji}]/u.test(user.avatar) ? (
+                            user.avatar
+                          ) : (
+                            <span className="text-white font-bold text-sm">
+                              {user.name?.charAt(0)?.toUpperCase() || '?'}
+                            </span>
+                          )}
                         </div>
                         {user.online && (
                           <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />

@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -38,15 +39,16 @@ interface Booking {
   status: 'active' | 'completed' | 'cancelled';
 }
 
-interface RegisteredUser {
+interface User {
+  id: string;
   name: string;
   email: string;
   phone: string;
-  password: string;
   location: string;
   birthDate: string;
   userType: 'parent' | 'nanny';
   photoUrl?: string;
+  avatar?: string;
   bio?: string;
   kids?: Array<{ name: string; age: number; gender: 'boy' | 'girl' }>;
   interests?: string[];
@@ -83,8 +85,8 @@ export default function ViewProfilePage() {
   const params = useParams();
   const email = decodeURIComponent(params.email as string);
   
-  const [user, setUser] = useState<RegisteredUser | null>(null);
-  const [currentUser, setCurrentUser] = useState<RegisteredUser | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
@@ -94,157 +96,173 @@ export default function ViewProfilePage() {
   const [isBlocked, setIsBlocked] = useState(false);
   const [showKarmaModal, setShowKarmaModal] = useState(false);
   const [karmaAmount, setKarmaAmount] = useState(1);
-  const [actualKarma, setActualKarma] = useState<number | null>(null);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const storedUser = localStorage.getItem('currentUser');
-      const registeredUsersJson = localStorage.getItem('registeredUsers');
-      
-      if (!storedUser || !registeredUsersJson) {
+    loadUserData();
+  }, [email]);
+
+  const loadUserData = async () => {
+    if (typeof window === 'undefined') return;
+
+    const currentUserEmail = localStorage.getItem('currentUserEmail');
+    if (!currentUserEmail) {
+      router.push('/login');
+      return;
+    }
+
+    // Check if viewing own profile
+    if (currentUserEmail === email) {
+      router.push('/profile');
+      return;
+    }
+
+    try {
+      // Load current user
+      const currentUserResponse = await fetch(`/api/users/current?email=${encodeURIComponent(currentUserEmail)}`);
+      if (!currentUserResponse.ok) {
         router.push('/login');
         return;
       }
-      
-      try {
-        const current: RegisteredUser = JSON.parse(storedUser);
-        
-        // Check if this is current user's own profile
-        if (current.email === email) {
-          router.push('/profile');
-          return;
-        }
-        
-        const allUsers: RegisteredUser[] = JSON.parse(registeredUsersJson);
-        let profileUser = allUsers.find((u) => u.email === email);
-        
-        // If user not found in registered users, show error
-        if (!profileUser) {
-          alert('Профиль пользователя не найден');
-          router.push('/match');
-          return;
-        }
-        
-        setCurrentUser(current);
-        setUser(profileUser);
-        setIsFriend(current.friends?.includes(email) || false);
-        
-        // Проверяем, находится ли пользователь в избранном
-        const storedLikes = localStorage.getItem('userLikes');
-        if (storedLikes) {
-          const likedEmails = JSON.parse(storedLikes);
-          setIsLiked(likedEmails.includes(email));
-        }
-        
-        // Проверяем, заблокирован ли пользователь
-        const storedBlocked = localStorage.getItem('userBlocked');
-        if (storedBlocked) {
-          const blockedEmails = JSON.parse(storedBlocked);
-          setIsBlocked(blockedEmails.includes(email));
-        }
-        
-        setIsLoading(false);
-      } catch {
-        router.push('/login');
+      const currentUserData = await currentUserResponse.json();
+      setCurrentUser(currentUserData.user);
+
+      // Load profile user
+      const profileUserResponse = await fetch(`/api/users/current?email=${encodeURIComponent(email)}`);
+      if (!profileUserResponse.ok) {
+        alert('Профиль пользователя не найден');
+        router.push('/match');
+        return;
       }
+      const profileUserData = await profileUserResponse.json();
+      setUser(profileUserData.user);
+
+      // Check if friend
+      setIsFriend(currentUserData.user.friends?.includes(email) || false);
+
+      // Load reactions
+      const reactionsResponse = await fetch(`/api/users/reactions?email=${encodeURIComponent(currentUserEmail)}`);
+      if (reactionsResponse.ok) {
+        const reactionsData = await reactionsResponse.json();
+        setIsLiked(reactionsData.likes?.includes(email) || false);
+        setIsBlocked(reactionsData.blocks?.includes(email) || false);
+      }
+
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error loading user data:', error);
+      alert('Ошибка при загрузке профиля');
+      router.push('/match');
     }
-  }, [email, router]);
+  };
 
-  // Загружаем актуальную карму из БД
-  useEffect(() => {
-    const fetchKarma = async () => {
-      try {
-        const response = await fetch(`/api/users/${email}/karma`);
-        if (response.ok) {
-          const data = await response.json();
-          setActualKarma(data.karma);
-        }
-      } catch (error) {
-        console.error('Error fetching karma:', error);
-      }
-    };
-
-    if (email && user) {
-      fetchKarma();
+  const addFriend = async () => {
+    if (!currentUser || !user) {
+      console.error('Missing user data:', { currentUser, user });
+      return;
     }
-  }, [email, user]);
-
-  const addFriend = () => {
-    if (!currentUser || !user) return;
     
-    const registeredUsersJson = localStorage.getItem('registeredUsers');
-    if (!registeredUsersJson) return;
-    
-    const allUsers: RegisteredUser[] = JSON.parse(registeredUsersJson);
-    const currentUserIndex = allUsers.findIndex((u) => u.email === currentUser.email);
-    
-    if (currentUserIndex !== -1) {
-      if (!allUsers[currentUserIndex].friends) {
-        allUsers[currentUserIndex].friends = [];
-      }
+    try {
+      console.log('Adding friend:', user.email);
+      console.log('Current user ID:', currentUser.id);
+      console.log('Current friends:', currentUser.friends);
       
-      if (!allUsers[currentUserIndex].friends!.includes(user.email)) {
-        allUsers[currentUserIndex].friends!.push(user.email);
-        localStorage.setItem('registeredUsers', JSON.stringify(allUsers));
-        localStorage.setItem('currentUser', JSON.stringify(allUsers[currentUserIndex]));
+      const updatedFriends = [...(currentUser.friends || []), user.email];
+      console.log('Updated friends list:', updatedFriends);
+      
+      const response = await fetch(`/api/users/${currentUser.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ friends: updatedFriends }),
+      });
+      
+      console.log('Response status:', response.status);
+      const data = await response.json();
+      console.log('Response data:', data);
+      
+      if (response.ok) {
         setIsFriend(true);
-        setCurrentUser(allUsers[currentUserIndex]);
+        setCurrentUser({ ...currentUser, friends: updatedFriends });
+        
+        // Show success message
+        setToastMessage('Пользователь добавлен в друзья! 👥');
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 3000);
+      } else {
+        console.error('Failed to add friend:', data);
+        alert(`Ошибка: ${data.error || 'Не удалось добавить в друзья'}`);
       }
+    } catch (error) {
+      console.error('Error adding friend:', error);
+      alert('Ошибка при добавлении в друзья');
     }
   };
 
-  const toggleLike = () => {
-    if (!user) return;
+  const toggleLike = async () => {
+    if (!user || !currentUser) return;
     
-    const storedLikes = localStorage.getItem('userLikes');
-    let likedEmails: string[] = storedLikes ? JSON.parse(storedLikes) : [];
-    
-    if (isLiked) {
-      // Убрать из избранного
-      likedEmails = likedEmails.filter((e) => e !== user.email);
-      setIsLiked(false);
-    } else {
-      // Добавить в избранное
-      if (!likedEmails.includes(user.email)) {
-        likedEmails.push(user.email);
-      }
-      setIsLiked(true);
-      
-      // Если был заблокирован, разблокировать
-      if (isBlocked) {
-        toggleBlock();
-      }
-    }
-    
-    localStorage.setItem('userLikes', JSON.stringify(likedEmails));
-  };
-
-  const toggleBlock = () => {
-    if (!user) return;
-    
-    const storedBlocked = localStorage.getItem('userBlocked');
-    let blockedEmails: string[] = storedBlocked ? JSON.parse(storedBlocked) : [];
-    
-    if (isBlocked) {
-      // Разблокировать
-      blockedEmails = blockedEmails.filter((e) => e !== user.email);
-      setIsBlocked(false);
-    } else {
-      // Заблокировать
-      if (!blockedEmails.includes(user.email)) {
-        blockedEmails.push(user.email);
-      }
-      setIsBlocked(true);
-      
-      // Если был в избранном, убрать
+    try {
       if (isLiked) {
-        toggleLike();
+        // Unlike
+        await fetch(`/api/users/reactions?fromEmail=${encodeURIComponent(currentUser.email)}&toEmail=${encodeURIComponent(user.email)}`, {
+          method: 'DELETE',
+        });
+        setIsLiked(false);
+      } else {
+        // Like
+        await fetch('/api/users/reactions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fromEmail: currentUser.email,
+            toEmail: user.email,
+            type: 'like',
+          }),
+        });
+        setIsLiked(true);
+        
+        // If was blocked, unblock
+        if (isBlocked) {
+          await toggleBlock();
+        }
       }
+    } catch (error) {
+      console.error('Error toggling like:', error);
     }
+  };
+
+  const toggleBlock = async () => {
+    if (!user || !currentUser) return;
     
-    localStorage.setItem('userBlocked', JSON.stringify(blockedEmails));
+    try {
+      if (isBlocked) {
+        // Unblock
+        await fetch(`/api/users/reactions?fromEmail=${encodeURIComponent(currentUser.email)}&toEmail=${encodeURIComponent(user.email)}`, {
+          method: 'DELETE',
+        });
+        setIsBlocked(false);
+      } else {
+        // Block
+        await fetch('/api/users/reactions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fromEmail: currentUser.email,
+            toEmail: user.email,
+            type: 'block',
+          }),
+        });
+        setIsBlocked(true);
+        
+        // If was liked, unlike
+        if (isLiked) {
+          await toggleLike();
+        }
+      }
+    } catch (error) {
+      console.error('Error toggling block:', error);
+    }
   };
 
   const addKarma = async () => {
@@ -262,26 +280,13 @@ export default function ViewProfilePage() {
       if (response.ok) {
         const data = await response.json();
         
-        // Обновляем актуальную карму
-        setActualKarma(data.karma);
-        
-        // Также обновляем в localStorage для совместимости
-        const registeredUsersJson = localStorage.getItem('registeredUsers');
-        if (registeredUsersJson) {
-          const allUsers: RegisteredUser[] = JSON.parse(registeredUsersJson);
-          const userIndex = allUsers.findIndex((u) => u.email === user.email);
-          
-          if (userIndex !== -1) {
-            allUsers[userIndex].karma = data.karma;
-            localStorage.setItem('registeredUsers', JSON.stringify(allUsers));
-            setUser(allUsers[userIndex]);
-          }
-        }
+        // Update user karma
+        setUser({ ...user, karma: data.karma });
         
         setShowKarmaModal(false);
         setKarmaAmount(1);
         
-        // Показываем toast уведомление
+        // Show toast
         setToastMessage(`+${karmaAmount} карма добавлена! 🔥`);
         setShowToast(true);
         setTimeout(() => setShowToast(false), 3000);
@@ -296,25 +301,51 @@ export default function ViewProfilePage() {
   };
 
   const handleSendMessage = async () => {
-    if (!user) return;
+    if (!user || !currentUser) return;
     
     try {
-      // Создаем или находим чат с этим пользователем через API
+      console.log('Creating chat with:', user.email);
+      
+      // Add as friend first if not already
+      if (!isFriend) {
+        const updatedFriends = [...(currentUser.friends || []), user.email];
+        
+        const friendResponse = await fetch(`/api/users/${currentUser.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ friends: updatedFriends }),
+        });
+        
+        if (friendResponse.ok) {
+          setIsFriend(true);
+          setCurrentUser({ ...currentUser, friends: updatedFriends });
+        }
+      }
+      
       const response = await fetch('/api/chats', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ userEmail: user.email }),
+        body: JSON.stringify({
+          userEmail: user.email,
+          currentUserEmail: currentUser.email,
+        }),
       });
 
       const data = await response.json();
+      console.log('Chat creation response:', data);
 
       if (response.ok && data.matchId) {
-        // Переходим в чат
+        console.log('Chat created successfully, matchId:', data.matchId);
+        
+        // Wait a bit longer to ensure the match is fully created in the database
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        console.log('Navigating to chat:', `/chats/${data.matchId}`);
         router.push(`/chats/${data.matchId}`);
       } else {
-        // Если пользователя нет в БД, показываем сообщение
+        console.error('Failed to create chat:', data);
         alert('Не удалось создать чат. Пользователь не найден в системе.');
       }
     } catch (error) {
@@ -324,40 +355,9 @@ export default function ViewProfilePage() {
   };
 
   const submitReview = () => {
-    if (!currentUser || !user || user.userType !== 'nanny') return;
-    
-    const registeredUsersJson = localStorage.getItem('registeredUsers');
-    if (!registeredUsersJson) return;
-    
-    const allUsers: RegisteredUser[] = JSON.parse(registeredUsersJson);
-    const userIndex = allUsers.findIndex((u) => u.email === user.email);
-    
-    if (userIndex !== -1) {
-      if (!allUsers[userIndex].reviews) {
-        allUsers[userIndex].reviews = [];
-      }
-      
-      const newReview: Review = {
-        id: Date.now().toString(),
-        fromUserId: currentUser.email,
-        fromUserName: currentUser.name,
-        rating: reviewRating,
-        comment: reviewComment,
-        date: new Date().toISOString(),
-      };
-      
-      allUsers[userIndex].reviews!.push(newReview);
-      
-      // Update average rating
-      const avgRating = allUsers[userIndex].reviews!.reduce((sum, r) => sum + r.rating, 0) / allUsers[userIndex].reviews!.length;
-      allUsers[userIndex].rating = Math.round(avgRating * 10) / 10;
-      
-      localStorage.setItem('registeredUsers', JSON.stringify(allUsers));
-      setUser(allUsers[userIndex]);
-      setShowReviewModal(false);
-      setReviewComment('');
-      setReviewRating(5);
-    }
+    // TODO: Implement review submission via API
+    alert('Функция отзывов будет реализована позже');
+    setShowReviewModal(false);
   };
 
   if (isLoading || !user) {
@@ -411,7 +411,7 @@ export default function ViewProfilePage() {
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <span>{user.userType === 'parent' ? '👨‍👩‍👧‍👦' : '👩‍🏫'}</span>
+                  <span>{user.avatar || (user.userType === 'parent' ? '👨‍👩‍👧‍👦' : '👩‍🏫')}</span>
                 )}
               </div>
             </div>
@@ -449,7 +449,7 @@ export default function ViewProfilePage() {
                     <span className="text-gray-400">•</span>
                     <div className="flex items-center gap-1">
                       <FireIcon className="w-4 h-4 text-orange-500" />
-                      <span className="font-semibold text-gray-900">{actualKarma !== null ? actualKarma : (user.karma || 0)}</span>
+                      <span className="font-semibold text-gray-900">{user.karma || 0}</span>
                       <span className="text-xs text-gray-600">кармы</span>
                     </div>
                   </>
@@ -467,7 +467,7 @@ export default function ViewProfilePage() {
 
           {/* Action Buttons */}
           <div className="pt-3 border-t border-gray-100 space-y-2">
-            {/* Основные кнопки */}
+            {/* Main buttons */}
             <div className="flex gap-2">
               <button
                 onClick={handleSendMessage}
@@ -510,7 +510,7 @@ export default function ViewProfilePage() {
               </button>
             </div>
             
-            {/* Дополнительные кнопки */}
+            {/* Additional buttons */}
             <div className="flex gap-2">
               {user.userType === 'parent' && (
                 <>
@@ -791,7 +791,7 @@ export default function ViewProfilePage() {
             </div>
 
             <p className="text-sm text-gray-600 mb-4">
-              Текущая карма: <span className="font-bold text-orange-600">{actualKarma !== null ? actualKarma : (user?.karma || 0)}</span>
+              Текущая карма: <span className="font-bold text-orange-600">{user?.karma || 0}</span>
             </p>
 
             <div className="mb-4">
@@ -857,7 +857,7 @@ export default function ViewProfilePage() {
             </div>
             <div className="flex-1">
               <p className="font-bold text-lg">{toastMessage}</p>
-              <p className="text-sm text-orange-100">Новое значение: {actualKarma}</p>
+              <p className="text-sm text-orange-100">Новое значение: {user?.karma}</p>
             </div>
             <button
               onClick={() => setShowToast(false)}
@@ -873,4 +873,3 @@ export default function ViewProfilePage() {
     </div>
   );
 }
-

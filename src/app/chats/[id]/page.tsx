@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import BottomNav from '@/components/BottomNav';
 import {
   ArrowLeftIcon,
   PaperAirplaneIcon,
@@ -63,7 +64,15 @@ export default function ChatDetailPage({ params }: { params: Promise<{ id: strin
     if (!chatId) return;
     
     try {
-      const response = await fetch(`/api/chats/${chatId}/messages`, {
+      // Получаем email текущего пользователя из localStorage
+      const currentUserEmail = localStorage.getItem('currentUserEmail');
+      if (!currentUserEmail) {
+        console.error('User email not found in localStorage');
+        setLoading(false);
+        return;
+      }
+      
+      const response = await fetch(`/api/chats/${chatId}/messages?currentUserEmail=${encodeURIComponent(currentUserEmail)}`, {
         cache: 'no-store',
         headers: {
           'Cache-Control': 'no-cache',
@@ -112,7 +121,15 @@ export default function ChatDetailPage({ params }: { params: Promise<{ id: strin
     if (inputText.trim() && !sending && chatId) {
       setSending(true);
       try {
-        const response = await fetch(`/api/chats/${chatId}/messages`, {
+        // Получаем email текущего пользователя из localStorage
+        const currentUserEmail = localStorage.getItem('currentUserEmail');
+        if (!currentUserEmail) {
+          console.error('User email not found in localStorage');
+          setSending(false);
+          return;
+        }
+        
+        const response = await fetch(`/api/chats/${chatId}/messages?currentUserEmail=${encodeURIComponent(currentUserEmail)}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -133,12 +150,19 @@ export default function ChatDetailPage({ params }: { params: Promise<{ id: strin
 
   const handleReaction = async (messageId: string, emoji: string) => {
     try {
+      // Получаем email текущего пользователя из localStorage
+      const currentUserEmail = localStorage.getItem('currentUserEmail');
+      if (!currentUserEmail) {
+        console.error('User email not found in localStorage');
+        return;
+      }
+      
       const response = await fetch(`/api/messages/${messageId}/reactions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ emoji }),
+        body: JSON.stringify({ emoji, currentUserEmail }),
       });
       
       const data = await response.json();
@@ -190,7 +214,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ id: strin
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="flex flex-col h-screen bg-gray-50 pb-16">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
         <button onClick={() => router.back()} className="p-1">
@@ -199,8 +223,16 @@ export default function ChatDetailPage({ params }: { params: Promise<{ id: strin
 
         <Link href={`/profile/${encodeURIComponent(contact.email)}`} className="flex items-center gap-3 flex-1 hover:opacity-80 transition-opacity">
           <div className="relative">
-            <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center text-xl">
-              {contact.avatar}
+            <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center text-xl overflow-hidden">
+              {contact.avatar && (contact.avatar.startsWith('http') || contact.avatar.startsWith('data:')) ? (
+                <img src={contact.avatar} alt={contact.name} className="w-full h-full object-cover" />
+              ) : contact.avatar && /[\p{Emoji}]/u.test(contact.avatar) ? (
+                contact.avatar
+              ) : (
+                <span className="text-white font-bold text-sm">
+                  {contact.name?.charAt(0)?.toUpperCase() || '?'}
+                </span>
+              )}
             </div>
             {contact.online && (
               <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
@@ -347,6 +379,8 @@ export default function ChatDetailPage({ params }: { params: Promise<{ id: strin
           </button>
         </div>
       </div>
+
+      <BottomNav />
     </div>
   );
 }

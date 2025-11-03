@@ -4,43 +4,60 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import BottomNav from '@/components/BottomNav';
 import { XMarkIcon, HeartIcon, ArrowRightIcon, UserCircleIcon } from '@heroicons/react/24/solid';
+import { calculateDistance } from '@/lib/geolocation';
 
 interface Profile {
-  id: number;
+  id: string;
   name: string;
   age: number;
   email: string;
-  kids: Array<{ age: number; gender: string }>;
+  kids: Array<{ age: number; gender: string; name?: string }>;
   interests: string[];
   bio: string;
   distance: number;
   photo: string;
   location: string;
   userType?: 'parent' | 'nanny';
+  latitude?: number;
+  longitude?: number;
 }
 
-// Profiles will be loaded from the database
-const profiles: Profile[] = [];
+// Calculate age from birthDate
+const calculateAge = (birthDate: string): number => {
+  if (!birthDate) return 0;
+  const birth = new Date(birthDate);
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age--;
+  }
+  return age;
+};
 
 export default function MatchPage() {
   const router = useRouter();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [swipeDirection, setSwipeDirection] = useState<'left' | 'right' | 'skip' | null>(null);
   const [matches, setMatches] = useState(0);
-  const [likedProfiles, setLikedProfiles] = useState<number[]>([]);
-  const [blockedProfiles, setBlockedProfiles] = useState<number[]>([]);
-  const [skippedProfiles, setSkippedProfiles] = useState<number[]>([]);
+  const [likedProfiles, setLikedProfiles] = useState<string[]>([]);
+  const [blockedProfiles, setBlockedProfiles] = useState<string[]>([]);
+  const [skippedProfiles, setSkippedProfiles] = useState<string[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
+  const [currentUserData, setCurrentUserData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Фильтруем профили: исключаем лайкнутых и заблокированных
   const availableProfiles = useMemo(() => {
     const reviewedIds = [...likedProfiles, ...blockedProfiles];
-    return profiles.filter(profile => !reviewedIds.includes(profile.id));
-  }, [likedProfiles, blockedProfiles]);
+    return profiles.filter(profile => !reviewedIds.includes(profile.email));
+  }, [profiles, likedProfiles, blockedProfiles]);
 
   // Профили для показа: сначала не пропущенные, потом пропущенные
   const { profilesToShow, showingSkipped } = useMemo(() => {
-    const notSkipped = availableProfiles.filter(p => !skippedProfiles.includes(p.id));
-    const skipped = availableProfiles.filter(p => skippedProfiles.includes(p.id));
+    const notSkipped = availableProfiles.filter(p => !skippedProfiles.includes(p.email));
+    const skipped = availableProfiles.filter(p => skippedProfiles.includes(p.email));
     
     if (notSkipped.length > 0) {
       return { profilesToShow: notSkipped, showingSkipped: false };
@@ -52,26 +69,96 @@ export default function MatchPage() {
 
   const currentProfile = profilesToShow[currentIndex];
 
-  // Загружаем данные из localStorage при монтировании
+  // Загружаем данные при монтировании
   useEffect(() => {
-    const storedLikes = localStorage.getItem('userLikes');
-    const storedBlocked = localStorage.getItem('userBlocked');
-    const storedSkipped = localStorage.getItem('userSkipped');
-    
-    if (storedLikes) {
-      const likes = JSON.parse(storedLikes);
-      setLikedProfiles(likes);
-      setMatches(likes.length);
-    }
-    
-    if (storedBlocked) {
-      setBlockedProfiles(JSON.parse(storedBlocked));
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    if (typeof window === 'undefined') return;
+
+    const email = localStorage.getItem('currentUserEmail');
+    if (!email) {
+      router.push('/login');
+      return;
     }
 
-    if (storedSkipped) {
-      setSkippedProfiles(JSON.parse(storedSkipped));
+    setCurrentUserEmail(email);
+
+    try {
+      // Load current user data
+      const currentUserResponse = await fetch(`/api/users/current?email=${encodeURIComponent(email)}`);
+      if (!currentUserResponse.ok) {
+        router.push('/login');
+        return;
+      }
+      const currentUserData = await currentUserResponse.json();
+      setCurrentUserData(currentUserData.user);
+
+      // Load all users
+      const usersResponse = await fetch(`/api/users?currentUserEmail=${encodeURIComponent(email)}`);
+      if (!usersResponse.ok) {
+        console.error('Failed to load users');
+        setIsLoading(false);
+        return;
+      }
+
+      const usersData = await usersResponse.json();
+      
+      // Convert to Profile format and calculate distances
+      const convertedProfiles: Profile[] = usersData.users.map((u: any) => {
+        let distance: number;
+        if (currentUserData.user.latitude && currentUserData.user.longitude && u.latitude && u.longitude) {
+          distance = calculateDistance(
+            currentUserData.user.latitude,
+            currentUserData.user.longitude,
+            u.latitude,
+            u.longitude
+          );
+        } else {
+          distance = 0;
+        }
+
+        return {
+          id: u.email,
+          name: u.name,
+          age: calculateAge(u.birthDate),
+          email: u.email,
+          kids: u.kids || [],
+          interests: u.interests || [],
+          bio: u.bio || 'Привет! Я ищу новых друзей среди родителей.',
+          distance,
+          photo: u.photoUrl || u.avatar || (u.userType === 'parent' ? '👨‍👩‍👧‍👦' : '👶'),
+          location: u.location,
+          userType: u.userType,
+          latitude: u.latitude,
+          longitude: u.longitude,
+        };
+      });
+      
+      setProfiles(convertedProfiles);
+
+      // Load user reactions from database
+      const reactionsResponse = await fetch(`/api/users/reactions?email=${encodeURIComponent(email)}`);
+      if (reactionsResponse.ok) {
+        const reactionsData = await reactionsResponse.json();
+        setLikedProfiles(reactionsData.likes || []);
+        setBlockedProfiles(reactionsData.blocks || []);
+        setMatches(reactionsData.likes?.length || 0);
+      }
+
+      // Load skipped from localStorage (temporary storage)
+      const storedSkipped = localStorage.getItem('userSkipped');
+      if (storedSkipped) {
+        setSkippedProfiles(JSON.parse(storedSkipped));
+      }
+
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error loading data:', error);
+      setIsLoading(false);
     }
-  }, []);
+  };
 
   // Сброс индекса при изменении списка профилей
   useEffect(() => {
@@ -80,36 +167,58 @@ export default function MatchPage() {
     }
   }, [profilesToShow.length, currentIndex]);
 
-  const handleSwipe = (direction: 'left' | 'right') => {
+  const handleSwipe = async (direction: 'left' | 'right') => {
     if (!currentProfile) return;
     
     setSwipeDirection(direction);
 
-    if (direction === 'right') {
-      // Добавляем в избранное
-      const newLikes = [...likedProfiles, currentProfile.id];
-      setLikedProfiles(newLikes);
-      localStorage.setItem('userLikes', JSON.stringify(newLikes));
-      setMatches(newLikes.length);
-      
-      // Убираем из пропущенных, если был там
-      if (skippedProfiles.includes(currentProfile.id)) {
-        const newSkipped = skippedProfiles.filter(id => id !== currentProfile.id);
-        setSkippedProfiles(newSkipped);
-        localStorage.setItem('userSkipped', JSON.stringify(newSkipped));
+    try {
+      if (direction === 'right') {
+        // Like - save to database
+        await fetch('/api/users/reactions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fromEmail: currentUserEmail,
+            toEmail: currentProfile.email,
+            type: 'like',
+          }),
+        });
+
+        const newLikes = [...likedProfiles, currentProfile.email];
+        setLikedProfiles(newLikes);
+        setMatches(newLikes.length);
+        
+        // Remove from skipped if present
+        if (skippedProfiles.includes(currentProfile.email)) {
+          const newSkipped = skippedProfiles.filter(id => id !== currentProfile.email);
+          setSkippedProfiles(newSkipped);
+          localStorage.setItem('userSkipped', JSON.stringify(newSkipped));
+        }
+      } else {
+        // Block - save to database
+        await fetch('/api/users/reactions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fromEmail: currentUserEmail,
+            toEmail: currentProfile.email,
+            type: 'block',
+          }),
+        });
+
+        const newBlocked = [...blockedProfiles, currentProfile.email];
+        setBlockedProfiles(newBlocked);
+        
+        // Remove from skipped if present
+        if (skippedProfiles.includes(currentProfile.email)) {
+          const newSkipped = skippedProfiles.filter(id => id !== currentProfile.email);
+          setSkippedProfiles(newSkipped);
+          localStorage.setItem('userSkipped', JSON.stringify(newSkipped));
+        }
       }
-    } else {
-      // Добавляем в заблокированные
-      const newBlocked = [...blockedProfiles, currentProfile.id];
-      setBlockedProfiles(newBlocked);
-      localStorage.setItem('userBlocked', JSON.stringify(newBlocked));
-      
-      // Убираем из пропущенных, если был там
-      if (skippedProfiles.includes(currentProfile.id)) {
-        const newSkipped = skippedProfiles.filter(id => id !== currentProfile.id);
-        setSkippedProfiles(newSkipped);
-        localStorage.setItem('userSkipped', JSON.stringify(newSkipped));
-      }
+    } catch (error) {
+      console.error('Error saving reaction:', error);
     }
 
     setTimeout(() => {
@@ -127,9 +236,9 @@ export default function MatchPage() {
     
     setSwipeDirection('skip');
     
-    // Добавляем в пропущенные (только если ещё не там)
-    if (!skippedProfiles.includes(currentProfile.id)) {
-      const newSkipped = [...skippedProfiles, currentProfile.id];
+    // Add to skipped (localStorage only - temporary)
+    if (!skippedProfiles.includes(currentProfile.email)) {
+      const newSkipped = [...skippedProfiles, currentProfile.email];
       setSkippedProfiles(newSkipped);
       localStorage.setItem('userSkipped', JSON.stringify(newSkipped));
     }
@@ -143,6 +252,23 @@ export default function MatchPage() {
       }
     }, 300);
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col h-screen bg-gray-50">
+        <header className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between flex-shrink-0">
+          <h1 className="text-xl font-bold text-gray-900">Smart Match</h1>
+        </header>
+        <main className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Загрузка профилей...</p>
+          </div>
+        </main>
+        <BottomNav />
+      </div>
+    );
+  }
 
   // Если нет доступных профилей
   if (profilesToShow.length === 0) {
@@ -214,13 +340,21 @@ export default function MatchPage() {
               }`}
             >
               {/* Photo Section */}
-              <div 
+              <div
                 onClick={() => router.push(`/profile/${encodeURIComponent(currentProfile.email)}`)}
                 className="relative h-64 bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center cursor-pointer hover:opacity-90 transition-opacity flex-shrink-0"
               >
-                <div className="text-8xl">{currentProfile.photo}</div>
+                {currentProfile.photo.startsWith('data:') || currentProfile.photo.startsWith('http') ? (
+                  <img
+                    src={currentProfile.photo}
+                    alt={currentProfile.name}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="text-8xl">{currentProfile.photo}</div>
+                )}
                 <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-semibold text-gray-700">
-                  📍 {currentProfile.distance} км
+                  📍 {currentProfile.distance > 0 ? `${currentProfile.distance} км` : 'Рядом'}
                 </div>
               </div>
 
@@ -328,4 +462,3 @@ export default function MatchPage() {
     </div>
   );
 }
-

@@ -72,22 +72,14 @@ export default function EditParentProfilePage() {
     name: '',
     age: '',
     location: '',
-    bio: 'Мама двоих малышей, люблю активный отдых и развивающие занятия. Ищу друзей для совместных прогулок!',
+    bio: '',
     phone: '',
     email: '',
   });
 
-  const [kids, setKids] = useState<Kid[]>([
-    { name: 'Алиса', age: 4, gender: 'girl' },
-    { name: 'Максим', age: 2, gender: 'boy' },
-  ]);
+  const [kids, setKids] = useState<Kid[]>([]);
 
-  const [interests, setInterests] = useState<string[]>([
-    'Прогулки в парке',
-    'Развивающие занятия',
-    'Спорт',
-    'Творчество',
-  ]);
+  const [interests, setInterests] = useState<string[]>([]);
 
   const [newInterest, setNewInterest] = useState('');
 

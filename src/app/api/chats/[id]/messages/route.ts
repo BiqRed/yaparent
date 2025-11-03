@@ -5,9 +5,6 @@ import prisma from '@/lib/prisma';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// Временный ID текущего пользователя
-const CURRENT_USER_ID = 'me@example.com';
-
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
@@ -16,12 +13,24 @@ export async function GET(
     const { id: matchId } = await context.params;
     console.log('=== GET /api/chats/[id]/messages ===');
     console.log('Match ID:', matchId);
+    console.log('Request URL:', request.url);
+
+    // Получаем email текущего пользователя из query параметров
+    const { searchParams } = new URL(request.url);
+    const currentUserEmail = searchParams.get('currentUserEmail');
+    
+    console.log('Current user email from query:', currentUserEmail);
+    
+    if (!currentUserEmail) {
+      console.log('ERROR: currentUserEmail not provided');
+      return NextResponse.json({ error: 'currentUserEmail is required' }, { status: 400 });
+    }
 
     // Получаем текущего пользователя
     const currentUser = await prisma.user.findUnique({
-      where: { email: CURRENT_USER_ID },
+      where: { email: currentUserEmail },
     });
-    console.log('Current user:', currentUser?.id, currentUser?.name);
+    console.log('Current user found:', currentUser?.id, currentUser?.name, currentUser?.email);
 
     if (!currentUser) {
       console.log('ERROR: User not found');
@@ -29,6 +38,7 @@ export async function GET(
     }
 
     // Получаем матч
+    console.log('Looking for match with ID:', matchId);
     const match = await prisma.match.findUnique({
       where: { id: matchId },
       include: {
@@ -37,15 +47,22 @@ export async function GET(
       },
     });
     console.log('Match found:', !!match);
+    if (match) {
+      console.log('Match details:', {
+        id: match.id,
+        user1: { id: match.user1.id, email: match.user1.email },
+        user2: { id: match.user2.id, email: match.user2.email },
+      });
+    }
 
     if (!match) {
       console.log('ERROR: Match not found with ID:', matchId);
       // Проверим все матчи в базе
       const allMatches = await prisma.match.findMany({
-        select: { id: true },
-        take: 5,
+        select: { id: true, user1Id: true, user2Id: true },
+        take: 10,
       });
-      console.log('Available match IDs:', allMatches.map(m => m.id));
+      console.log('Available matches:', allMatches);
       return NextResponse.json({ error: 'Match not found' }, { status: 404 });
     }
 
@@ -103,13 +120,22 @@ export async function GET(
       })),
     }));
 
+    // Определяем аватар для контакта
+    let displayAvatar = otherUser.avatar;
+    if (otherUser.photoUrl) {
+      displayAvatar = otherUser.photoUrl;
+    } else if (!otherUser.avatar || !/[\p{Emoji}]/u.test(otherUser.avatar)) {
+      // Если avatar не эмодзи, используем дефолтный эмодзи
+      displayAvatar = otherUser.userType === 'nanny' ? '👩‍🏫' : '👨‍👩‍👧‍👦';
+    }
+
     return NextResponse.json({
       messages: formattedMessages,
       contact: {
         id: otherUser.id,
         name: otherUser.name,
         email: otherUser.email,
-        avatar: otherUser.avatar,
+        avatar: displayAvatar,
         online: otherUser.online,
         phone: otherUser.phone,
       },
@@ -134,9 +160,17 @@ export async function POST(
       return NextResponse.json({ error: 'Content is required' }, { status: 400 });
     }
 
+    // Получаем email текущего пользователя из query параметров
+    const { searchParams } = new URL(request.url);
+    const currentUserEmail = searchParams.get('currentUserEmail');
+    
+    if (!currentUserEmail) {
+      return NextResponse.json({ error: 'currentUserEmail is required' }, { status: 400 });
+    }
+
     // Получаем текущего пользователя
     const currentUser = await prisma.user.findUnique({
-      where: { email: CURRENT_USER_ID },
+      where: { email: currentUserEmail },
     });
 
     if (!currentUser) {

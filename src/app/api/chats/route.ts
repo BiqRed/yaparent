@@ -5,38 +5,64 @@ import prisma from '@/lib/prisma';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// Временный ID текущего пользователя (в реальном приложении будет из сессии)
-const CURRENT_USER_ID = 'me@example.com';
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { userId, userEmail } = body;
+    const { userId, userEmail, currentUserEmail } = body;
 
-    if (!userId && !userEmail) {
-      return NextResponse.json({ error: 'userId or userEmail is required' }, { status: 400 });
+    console.log('=== POST /api/chats ===');
+    console.log('Body:', { userId, userEmail, currentUserEmail });
+
+    if (!userEmail && !userId) {
+      return NextResponse.json({ error: 'userEmail or userId is required' }, { status: 400 });
     }
 
-    // Получаем текущего пользователя
-    const currentUser = await prisma.user.findUnique({
-      where: { email: CURRENT_USER_ID },
+    if (!currentUserEmail) {
+      return NextResponse.json({ error: 'currentUserEmail is required' }, { status: 400 });
+    }
+
+    // Получаем или создаем текущего пользователя в БД
+    let currentUser = await prisma.user.findUnique({
+      where: { email: currentUserEmail },
     });
 
     if (!currentUser) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      console.log('Creating current user:', currentUserEmail);
+      // Если пользователя нет в БД, создаем его
+      currentUser = await prisma.user.create({
+        data: {
+          email: currentUserEmail,
+          name: 'User', // Будет обновлено позже
+          avatar: '👤',
+          online: true,
+        },
+      });
     }
+    console.log('Current user:', currentUser.id, currentUser.email);
 
-    // Находим целевого пользователя по ID или email
-    let targetUser;
-    if (userId) {
-      targetUser = await prisma.user.findUnique({ where: { id: userId } });
-    } else {
-      targetUser = await prisma.user.findUnique({ where: { email: userEmail } });
-    }
+    // Находим или создаем целевого пользователя
+    // Используем userEmail, если он есть, иначе ищем по userId
+    let targetUser = userEmail
+      ? await prisma.user.findUnique({ where: { email: userEmail } })
+      : await prisma.user.findUnique({ where: { id: userId } });
 
     if (!targetUser) {
-      return NextResponse.json({ error: 'Target user not found' }, { status: 404 });
+      console.log('Creating target user:', userEmail || userId);
+      // Создаем целевого пользователя, если его нет (только если есть email)
+      if (userEmail) {
+        targetUser = await prisma.user.create({
+          data: {
+            email: userEmail,
+            name: 'User',
+            avatar: '👤',
+            online: true,
+          },
+        });
+      } else {
+        return NextResponse.json({ error: 'Target user not found' }, { status: 404 });
+      }
     }
+    console.log('Target user:', targetUser.id, targetUser.email);
 
     // Проверяем, существует ли уже матч
     const existingMatch = await prisma.match.findFirst({
@@ -55,13 +81,15 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingMatch) {
-      return NextResponse.json({ 
+      console.log('Match already exists:', existingMatch.id);
+      return NextResponse.json({
         matchId: existingMatch.id,
         message: 'Match already exists',
       });
     }
 
     // Создаем новый матч
+    console.log('Creating new match between', currentUser.id, 'and', targetUser.id);
     const match = await prisma.match.create({
       data: {
         user1Id: currentUser.id,
@@ -70,7 +98,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({ 
+    console.log('Match created successfully:', match.id);
+    return NextResponse.json({
       matchId: match.id,
       message: 'Match created successfully',
     });
@@ -80,15 +109,22 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const currentUserEmail = searchParams.get('currentUserEmail');
+
+    if (!currentUserEmail) {
+      return NextResponse.json({ error: 'currentUserEmail is required' }, { status: 400 });
+    }
+
     // Получаем текущего пользователя
     const currentUser = await prisma.user.findUnique({
-      where: { email: CURRENT_USER_ID },
+      where: { email: currentUserEmail },
     });
 
     if (!currentUser) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      return NextResponse.json({ chats: [], currentUserId: null });
     }
 
     // Получаем все матчи пользователя
@@ -130,10 +166,19 @@ export async function GET() {
           },
         });
 
+        // Определяем аватар: используем photoUrl если есть, иначе проверяем avatar на эмодзи
+        let displayAvatar = otherUser.avatar;
+        if (otherUser.photoUrl) {
+          displayAvatar = otherUser.photoUrl;
+        } else if (!otherUser.avatar || !/[\p{Emoji}]/u.test(otherUser.avatar)) {
+          // Если avatar не эмодзи, используем дефолтный эмодзи
+          displayAvatar = otherUser.userType === 'nanny' ? '👩‍🏫' : '👨‍👩‍👧‍👦';
+        }
+
         return {
           id: match.id,
           name: otherUser.name,
-          avatar: otherUser.avatar,
+          avatar: displayAvatar,
           online: otherUser.online,
           lastMessage: lastMessage?.content || '',
           time: lastMessage

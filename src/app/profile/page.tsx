@@ -18,7 +18,6 @@ import {
   UsersIcon,
   CalendarIcon,
   ClockIcon,
-  CurrencyDollarIcon,
   AcademicCapIcon,
   LockClosedIcon,
 } from '@heroicons/react/24/solid';
@@ -40,16 +39,17 @@ interface Booking {
   status: 'active' | 'completed' | 'cancelled';
 }
 
-interface RegisteredUser {
+interface CurrentUser {
+  id: string;
   name: string;
   email: string;
   phone: string;
-  password: string;
+  password?: string;
   location: string;
   birthDate: string;
   userType: 'parent' | 'nanny';
   photoUrl?: string;
-  // Profile-specific fields
+  avatar?: string;
   bio?: string;
   kids?: Array<{ name: string; age: number; gender: 'boy' | 'girl' }>;
   interests?: string[];
@@ -61,11 +61,13 @@ interface RegisteredUser {
   certifications?: string[];
   languages?: string[];
   availableHours?: string[];
-  // Statistics
   reviews?: Review[];
   bookings?: Booking[];
   friends?: string[];
   rating?: number;
+  karma?: number;
+  latitude?: number;
+  longitude?: number;
 }
 
 // Calculate age from birthDate (helper function)
@@ -84,69 +86,65 @@ const calculateAge = (birthDate: string): number => {
 export default function ProfilePage() {
   const router = useRouter();
   const [userType, setUserType] = useState<UserType>('parent');
-  const [currentUser, setCurrentUser] = useState<RegisteredUser | null>(null);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  
-  // Demo data - all hooks must be declared before any conditional returns
-  const [parentUser] = useState({
-    name: 'Анна',
-    age: 32,
-    kids: [
-      { age: 4, gender: 'girl' as const, name: 'Алиса' },
-      { age: 2, gender: 'boy' as const, name: 'Максим' }
-    ],
-    karma: 850,
-    matches: 24,
-    helpedFamilies: 12,
-    eventsAttended: 8,
-    rating: 4.9,
-    photo: '👩‍👧‍👦',
-    location: 'Москва, Тверской район',
-    bio: 'Мама двоих малышей, люблю активный отдых и развивающие занятия. Ищу друзей для совместных прогулок!'
-  });
-
-  const [nannyUser] = useState({
-    name: 'Мария Петрова',
-    age: 28,
-    photo: '👩‍🏫',
-    location: 'Москва, Центральный район',
-    bio: 'Опытная няня с педагогическим образованием. Специализируюсь на раннем развитии детей.',
-    rating: 4.95,
-    reviews: 47,
-    experience: 5,
-    hourlyRate: 800,
-    completedBookings: 156,
-    activeBookings: 3,
-    verified: true,
-  });
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
+    loadUserData();
+    loadUnreadCount();
+  }, []);
+
+  const loadUnreadCount = async () => {
+    try {
+      const currentUserEmail = localStorage.getItem('currentUserEmail');
+      if (!currentUserEmail) return;
+
+      const response = await fetch(`/api/chats?currentUserEmail=${encodeURIComponent(currentUserEmail)}`);
+      if (response.ok) {
+        const data = await response.json();
+        const total = data.chats?.reduce((sum: number, chat: any) => sum + (chat.unread || 0), 0) || 0;
+        setUnreadCount(total);
+      }
+    } catch (error) {
+      console.error('Error loading unread count:', error);
+    }
+  };
+
+  const loadUserData = async () => {
     if (typeof window !== 'undefined') {
-      const storedUser = localStorage.getItem('currentUser');
+      const email = localStorage.getItem('currentUserEmail');
       const storedType = localStorage.getItem('userType') as UserType;
       
-      if (!storedUser || !storedType) {
-        // Не залогинен - редирект на главную
+      if (!email || !storedType) {
         router.push('/');
         return;
       }
       
       try {
-        const user = JSON.parse(storedUser) as RegisteredUser;
-        setCurrentUser(user);
-        setUserType(user.userType);
-      } catch {
+        // Fetch user data from API
+        const response = await fetch(`/api/users/current?email=${encodeURIComponent(email)}`);
+        
+        if (!response.ok) {
+          console.error('Failed to fetch user data');
+          router.push('/');
+          return;
+        }
+
+        const data = await response.json();
+        setCurrentUser(data.user);
+        setUserType(data.user.userType);
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Error loading user data:', error);
         router.push('/');
-        return;
       }
-      
-      setIsLoading(false);
     }
-  }, [router]);
+  };
 
   const handleLogout = () => {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('currentUser');
+      localStorage.removeItem('currentUserEmail');
       localStorage.removeItem('userType');
       router.push('/login');
     }
@@ -163,13 +161,10 @@ export default function ProfilePage() {
     );
   }
 
-  // Merge real user data with demo stats
   const userAge = calculateAge(currentUser.birthDate);
   const displayName = currentUser.name;
   const displayLocation = currentUser.location;
-  const displayPhoto = userType === 'parent' ? '👨‍👩‍👧‍👦' : '👩‍🏫';
-
-  const user = userType === 'parent' ? parentUser : nannyUser;
+  const displayPhoto = currentUser.photoUrl || currentUser.avatar || (userType === 'parent' ? '👨‍👩‍👧‍👦' : '👩‍🏫');
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
@@ -196,7 +191,7 @@ export default function ProfilePage() {
               >
                 <PencilIcon className="w-4 h-4" />
               </Link>
-              {userType === 'nanny' && nannyUser.verified && (
+              {userType === 'nanny' && (
                 <div className="absolute -top-1 -right-1 w-7 h-7 bg-blue-500 text-white rounded-full flex items-center justify-center shadow-lg">
                   <ShieldCheckIcon className="w-5 h-5" />
                 </div>
@@ -210,9 +205,9 @@ export default function ProfilePage() {
                   <p className="text-gray-600 text-sm">{displayLocation}</p>
                   <p className="text-gray-500 text-xs mt-1">{currentUser.email}</p>
                 </div>
-                {userType === 'nanny' && (
+                {userType === 'nanny' && currentUser.hourlyRate && (
                   <div className="text-right">
-                    <div className="text-2xl font-bold text-green-600">₽{currentUser.hourlyRate || nannyUser.hourlyRate}</div>
+                    <div className="text-2xl font-bold text-green-600">₽{currentUser.hourlyRate}</div>
                     <div className="text-xs text-gray-500">руб/час</div>
                   </div>
                 )}
@@ -220,21 +215,21 @@ export default function ProfilePage() {
               <div className="flex items-center gap-2 mt-2">
                 <div className="flex items-center gap-1">
                   <StarIcon className="w-4 h-4 text-yellow-400" />
-                  <span className="font-semibold text-gray-900">{user.rating}</span>
+                  <span className="font-semibold text-gray-900">{currentUser.rating || 0}</span>
                 </div>
                 {userType === 'parent' ? (
                   <>
                     <span className="text-gray-400">•</span>
                     <div className="flex items-center gap-1 text-purple-600">
                       <HeartIcon className="w-4 h-4" />
-                      <span className="font-semibold">{parentUser.karma}</span>
+                      <span className="font-semibold">{currentUser.karma || 0}</span>
                     </div>
                   </>
                 ) : (
                   <>
                     <span className="text-gray-400">•</span>
                     <div className="text-sm text-gray-600">
-                      {nannyUser.reviews} отзывов
+                      {currentUser.reviews?.length || 0} отзывов
                     </div>
                   </>
                 )}
@@ -243,18 +238,20 @@ export default function ProfilePage() {
           </div>
 
           {/* Bio */}
-          <div className="pt-3 border-t border-gray-100">
-            <p className="text-gray-700 leading-relaxed">
-              {currentUser.bio || user.bio}
-            </p>
-          </div>
+          {currentUser.bio && (
+            <div className="pt-3 border-t border-gray-100">
+              <p className="text-gray-700 leading-relaxed">
+                {currentUser.bio}
+              </p>
+            </div>
+          )}
 
           {/* Kids (only for parents) */}
-          {userType === 'parent' && (
+          {userType === 'parent' && currentUser.kids && currentUser.kids.length > 0 && (
             <div className="pt-3 border-t border-gray-100">
               <p className="text-sm font-semibold text-gray-500 mb-2">Дети:</p>
               <div className="flex gap-2 flex-wrap">
-                {(currentUser.kids && currentUser.kids.length > 0 ? currentUser.kids : parentUser.kids).map((kid, idx) => (
+                {currentUser.kids.map((kid, idx) => (
                   <div key={idx} className="bg-purple-50 text-purple-700 px-3 py-2 rounded-xl text-sm font-semibold">
                     {kid.gender === 'girl' ? '👧' : '👦'} {kid.name}, {kid.age} {kid.age === 1 ? 'год' : kid.age < 5 ? 'года' : 'лет'}
                   </div>
@@ -282,13 +279,15 @@ export default function ProfilePage() {
             <div className="pt-3 border-t border-gray-100 space-y-3">
               {/* Experience and Age Range */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="flex items-center gap-2 text-sm text-gray-600">
-                  <ClockIcon className="w-5 h-5 text-green-600" />
-                  <div>
-                    <span className="font-semibold block text-xs text-gray-500">Опыт работы</span>
-                    <span className="text-gray-900">{currentUser.experience || nannyUser.experience} лет</span>
+                {currentUser.experience && (
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <ClockIcon className="w-5 h-5 text-green-600" />
+                    <div>
+                      <span className="font-semibold block text-xs text-gray-500">Опыт работы</span>
+                      <span className="text-gray-900">{currentUser.experience} лет</span>
+                    </div>
                   </div>
-                </div>
+                )}
                 {currentUser.ageRange && (
                   <div className="flex items-center gap-2 text-sm text-gray-600">
                     <UserCircleIcon className="w-5 h-5 text-green-600" />
@@ -385,12 +384,12 @@ export default function ProfilePage() {
             </div>
             <div className="bg-white rounded-2xl p-4 text-center">
               <HeartIcon className="w-6 h-6 text-red-500 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-gray-900">{parentUser.karma}</p>
+              <p className="text-2xl font-bold text-gray-900">{currentUser.karma || 0}</p>
               <p className="text-xs text-gray-600">Карма</p>
             </div>
             <div className="bg-white rounded-2xl p-4 text-center">
               <CalendarIcon className="w-6 h-6 text-blue-500 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-gray-900">{parentUser.eventsAttended}</p>
+              <p className="text-2xl font-bold text-gray-900">0</p>
               <p className="text-xs text-gray-600">Мероприятий</p>
             </div>
           </div>
@@ -469,7 +468,9 @@ export default function ProfilePage() {
             <div className="flex items-center gap-3">
               <BellIcon className="w-6 h-6 text-gray-600" />
               <span className="flex-1 font-semibold text-gray-900">Уведомления</span>
-              <span className="bg-[#FF3B30] text-white text-xs px-2 py-1 rounded-full font-bold">3</span>
+              {unreadCount > 0 && (
+                <span className="bg-[#FF3B30] text-white text-xs px-2 py-1 rounded-full font-bold">{unreadCount}</span>
+              )}
               <span className="text-gray-400">›</span>
             </div>
           </Link>
@@ -513,21 +514,6 @@ export default function ProfilePage() {
         <p className="text-center text-sm text-gray-500 mt-6">
           Ya Родители v1.0.0 • {userType === 'parent' ? 'Родитель' : 'Няня'}
         </p>
-
-        {/* Demo: Switch User Type (for testing) */}
-        <div className="mt-4 p-4 bg-white rounded-2xl">
-          <p className="text-xs text-gray-500 mb-2 text-center">Демо-режим</p>
-          <button
-            onClick={() => {
-              const newType: UserType = userType === 'parent' ? 'nanny' : 'parent';
-              localStorage.setItem('userType', newType);
-              setUserType(newType);
-            }}
-            className="w-full py-2 text-sm bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 transition-colors"
-          >
-            Переключить на {userType === 'parent' ? 'няню' : 'родителя'}
-          </button>
-        </div>
       </div>
 
       <BottomNav />

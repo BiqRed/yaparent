@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
-// Временный ID текущего пользователя
-const CURRENT_USER_ID = 'me@example.com';
-
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
@@ -11,15 +8,19 @@ export async function POST(
   try {
     const { id: messageId } = await context.params;
     const body = await request.json();
-    const { emoji } = body;
+    const { emoji, currentUserEmail } = body;
 
     if (!emoji) {
       return NextResponse.json({ error: 'Emoji is required' }, { status: 400 });
     }
 
+    if (!currentUserEmail) {
+      return NextResponse.json({ error: 'currentUserEmail is required' }, { status: 400 });
+    }
+
     // Получаем текущего пользователя
     const currentUser = await prisma.user.findUnique({
-      where: { email: CURRENT_USER_ID },
+      where: { email: currentUserEmail },
     });
 
     if (!currentUser) {
@@ -93,14 +94,19 @@ export async function DELETE(
     const { id: messageId } = await context.params;
     const { searchParams } = new URL(request.url);
     const emoji = searchParams.get('emoji');
+    const currentUserEmail = searchParams.get('currentUserEmail');
 
     if (!emoji) {
       return NextResponse.json({ error: 'Emoji is required' }, { status: 400 });
     }
 
+    if (!currentUserEmail) {
+      return NextResponse.json({ error: 'currentUserEmail is required' }, { status: 400 });
+    }
+
     // Получаем текущего пользователя
     const currentUser = await prisma.user.findUnique({
-      where: { email: CURRENT_USER_ID },
+      where: { email: currentUserEmail },
     });
 
     if (!currentUser) {

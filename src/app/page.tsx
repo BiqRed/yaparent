@@ -10,8 +10,8 @@ export default function Home() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const currentUser = localStorage.getItem('currentUser');
-      if (currentUser) {
+      const currentUserEmail = localStorage.getItem('currentUserEmail');
+      if (currentUserEmail) {
         // User is logged in, redirect to profile
         router.push('/profile');
       }

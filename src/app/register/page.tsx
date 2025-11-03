@@ -39,6 +39,9 @@ interface RegisteredUser {
   birthDate: string;
   userType: 'parent' | 'nanny';
   photoUrl?: string;
+  // Geolocation
+  latitude?: number;
+  longitude?: number;
   // Statistics
   reviews?: Review[];
   bookings?: Booking[];
@@ -63,12 +66,14 @@ export default function RegisterPage() {
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [photoUrl, setPhotoUrl] = useState<string>('');
   const [photoPreview, setPhotoPreview] = useState<string>('');
+  const [isRequestingLocation, setIsRequestingLocation] = useState(false);
+  const [locationGranted, setLocationGranted] = useState<boolean | null>(null);
 
   // Check if user is already logged in
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const currentUser = localStorage.getItem('currentUser');
-      if (currentUser) {
+      const currentUserEmail = localStorage.getItem('currentUserEmail');
+      if (currentUserEmail) {
         // User is already logged in, redirect to profile
         router.push('/profile');
       }
@@ -174,71 +179,86 @@ export default function RegisterPage() {
     }
 
     setIsLoading(true);
+    setIsRequestingLocation(true);
 
-    // Save user data to localStorage (in a real app, this would be saved to the backend)
-    if (typeof window !== 'undefined') {
-      // Get existing users or initialize empty array
-      const existingUsersJson = localStorage.getItem('registeredUsers');
-      const existingUsers = existingUsersJson ? JSON.parse(existingUsersJson) : [];
+    // Request geolocation
+    let latitude: number | undefined;
+    let longitude: number | undefined;
 
-      // Check if user already exists
-      const userExists = existingUsers.some((u: RegisteredUser) => u.email === formData.email);
-      if (userExists) {
+    if (navigator.geolocation) {
+      try {
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            timeout: 5000, // Reduced timeout to 5 seconds
+            maximumAge: 60000, // Allow cached position up to 1 minute old
+            enableHighAccuracy: false, // Faster, less accurate positioning
+          });
+        });
+        latitude = position.coords.latitude;
+        longitude = position.coords.longitude;
+        setLocationGranted(true);
+      } catch (error) {
+        console.log('Geolocation denied or unavailable:', error);
+        setLocationGranted(false);
+        // Continue without geolocation - this is optional
+      }
+    } else {
+      setLocationGranted(false);
+    }
+
+    setIsRequestingLocation(false);
+
+    // Сохраняем пользователя в базу данных
+    try {
+      const response = await fetch('/api/users/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: formData.email,
+          name: formData.name,
+          phone: formData.phone,
+          password: formData.password,
+          userType: formData.userType,
+          location: formData.location,
+          birthDate: formData.birthDate,
+          photoUrl: photoUrl || undefined,
+          latitude,
+          longitude,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
         setIsLoading(false);
-        setErrors({ email: 'Пользователь с таким email уже зарегистрирован' });
+        setErrors({ email: data.error || 'Ошибка при регистрации' });
         return;
       }
 
-      // Add new user
-      const newUser: RegisteredUser = {
-        name: formData.name,
-        email: formData.email,
-        phone: formData.phone,
-        password: formData.password, // In real app, this should be hashed
-        location: formData.location,
-        birthDate: formData.birthDate,
-        userType: formData.userType as 'parent' | 'nanny',
-        photoUrl: photoUrl || undefined,
-        reviews: [],
-        bookings: [],
-        friends: [],
-        rating: 0,
-      };
-      existingUsers.push(newUser);
-      localStorage.setItem('registeredUsers', JSON.stringify(existingUsers));
+      console.log('User registered successfully:', data.user);
 
-      // Save current user info
-      localStorage.setItem('currentUser', JSON.stringify(newUser));
-      localStorage.setItem('userType', formData.userType);
-
-      // Также сохраняем пользователя в базу данных для чатов
-      try {
-        await fetch('/api/users/register', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: formData.email,
-            name: formData.name,
-            phone: formData.phone,
-            photoUrl: photoUrl || '👤',
-          }),
-        });
-      } catch (error) {
-        console.error('Error syncing user to database:', error);
+      // Сохраняем только ID текущего пользователя в localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('currentUserEmail', data.user.email);
+        localStorage.setItem('userType', formData.userType);
       }
-    }
 
-    // Simulate API call - redirect based on user type
-    setTimeout(() => {
+      // Redirect based on user type
+      setTimeout(() => {
+        setIsLoading(false);
+        if (formData.userType === 'parent') {
+          router.push('/profile/edit/parent');
+        } else {
+          router.push('/profile/edit/nanny');
+        }
+      }, 500);
+    } catch (error) {
+      console.error('Error registering user:', error);
       setIsLoading(false);
-      if (formData.userType === 'parent') {
-        router.push('/onboarding');
-      } else {
-        router.push('/profile/edit/nanny');
-      }
-    }, 1500);
+      setErrors({ email: 'Ошибка при регистрации. Попробуйте позже.' });
+    }
   };
 
   return (
@@ -550,13 +570,33 @@ export default function RegisterPage() {
               )}
             </div>
 
-                {/* Submit Button */}
+            {/* Submit Button */}
                 <button
                   type="submit"
                   disabled={isLoading}
                   className="w-full mt-6 py-4 bg-white text-[#FF3B30] rounded-2xl font-bold text-lg shadow-2xl hover:shadow-xl transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
                 >
-                  {isLoading ? (
+                  {isRequestingLocation ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                          fill="none"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                      Запрос геолокации...
+                    </span>
+                  ) : isLoading ? (
                     <span className="flex items-center justify-center gap-2">
                       <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
                         <circle
