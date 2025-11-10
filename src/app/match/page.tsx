@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import BottomNav from '@/components/BottomNav';
-import { XMarkIcon, HeartIcon, ArrowRightIcon, UserCircleIcon } from '@heroicons/react/24/solid';
+import { XMarkIcon, HeartIcon, ArrowRightIcon, UserCircleIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/solid';
 import { calculateDistance } from '@/lib/geolocation';
 
 interface Profile {
@@ -39,6 +39,7 @@ export default function MatchPage() {
   const router = useRouter();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [swipeDirection, setSwipeDirection] = useState<'left' | 'right' | 'skip' | null>(null);
+  const [isAnimating, setIsAnimating] = useState(false);
   const [matches, setMatches] = useState(0);
   const [likedProfiles, setLikedProfiles] = useState<string[]>([]);
   const [blockedProfiles, setBlockedProfiles] = useState<string[]>([]);
@@ -46,7 +47,11 @@ export default function MatchPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
   const [currentUserData, setCurrentUserData] = useState<any>(null);
+  const [currentUserCity, setCurrentUserCity] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
+  const [showLikeNotification, setShowLikeNotification] = useState(false);
+  const [likedProfile, setLikedProfile] = useState<Profile | null>(null);
+  const [showConfetti, setShowConfetti] = useState(false);
 
   // Фильтруем профили: исключаем лайкнутых и заблокированных
   const availableProfiles = useMemo(() => {
@@ -105,6 +110,10 @@ export default function MatchPage() {
 
       const usersData = await usersResponse.json();
       
+      // Get current user's city (extract city from location)
+      const userCity = currentUserData.user.location?.split(',')[0]?.trim() || '';
+      setCurrentUserCity(userCity);
+      
       // Convert to Profile format and calculate distances
       const convertedProfiles: Profile[] = usersData.users.map((u: any) => {
         let distance: number;
@@ -136,7 +145,21 @@ export default function MatchPage() {
         };
       });
       
-      setProfiles(convertedProfiles);
+      // Sort profiles: same city first, then by distance
+      const sortedProfiles = convertedProfiles.sort((a, b) => {
+        const aCityMatch = a.location?.split(',')[0]?.trim().toLowerCase() === userCity.toLowerCase();
+        const bCityMatch = b.location?.split(',')[0]?.trim().toLowerCase() === userCity.toLowerCase();
+        
+        // If both from same city or both not, sort by distance
+        if (aCityMatch === bCityMatch) {
+          return a.distance - b.distance;
+        }
+        
+        // Otherwise, prioritize same city
+        return aCityMatch ? -1 : 1;
+      });
+      
+      setProfiles(sortedProfiles);
 
       // Load user reactions from database
       const reactionsResponse = await fetch(`/api/users/reactions?email=${encodeURIComponent(email)}`);
@@ -168,97 +191,166 @@ export default function MatchPage() {
   }, [profilesToShow.length, currentIndex]);
 
   const handleSwipe = async (direction: 'left' | 'right') => {
-    if (!currentProfile) return;
+    if (!currentProfile || isAnimating) return;
     
+    setIsAnimating(true);
     setSwipeDirection(direction);
 
-    try {
-      if (direction === 'right') {
-        // Like - save to database
-        await fetch('/api/users/reactions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fromEmail: currentUserEmail,
-            toEmail: currentProfile.email,
-            type: 'like',
-          }),
-        });
+    // Save current profile email and data before any state changes
+    const profileToProcess = currentProfile.email;
+    const profileData = currentProfile;
+    const currentIdx = currentIndex;
 
-        const newLikes = [...likedProfiles, currentProfile.email];
-        setLikedProfiles(newLikes);
-        setMatches(newLikes.length);
-        
-        // Remove from skipped if present
-        if (skippedProfiles.includes(currentProfile.email)) {
-          const newSkipped = skippedProfiles.filter(id => id !== currentProfile.email);
-          setSkippedProfiles(newSkipped);
-          localStorage.setItem('userSkipped', JSON.stringify(newSkipped));
-        }
-      } else {
-        // Block - save to database
-        await fetch('/api/users/reactions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fromEmail: currentUserEmail,
-            toEmail: currentProfile.email,
-            type: 'block',
-          }),
-        });
+    // Start animation first, then process in background
+    setTimeout(async () => {
+      try {
+        if (direction === 'right') {
+          // Like - save to database
+          await fetch('/api/users/reactions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fromEmail: currentUserEmail,
+              toEmail: profileToProcess,
+              type: 'like',
+            }),
+          });
 
-        const newBlocked = [...blockedProfiles, currentProfile.email];
-        setBlockedProfiles(newBlocked);
-        
-        // Remove from skipped if present
-        if (skippedProfiles.includes(currentProfile.email)) {
-          const newSkipped = skippedProfiles.filter(id => id !== currentProfile.email);
-          setSkippedProfiles(newSkipped);
-          localStorage.setItem('userSkipped', JSON.stringify(newSkipped));
+          const newLikes = [...likedProfiles, profileToProcess];
+          setLikedProfiles(newLikes);
+          setMatches(newLikes.length);
+          
+          // Remove from skipped if present
+          if (skippedProfiles.includes(profileToProcess)) {
+            const newSkipped = skippedProfiles.filter(id => id !== profileToProcess);
+            setSkippedProfiles(newSkipped);
+            localStorage.setItem('userSkipped', JSON.stringify(newSkipped));
+          }
+
+          // Show notification and confetti after like
+          setLikedProfile(profileData);
+          setShowConfetti(true);
+          setTimeout(() => {
+            setShowLikeNotification(true);
+          }, 100);
+          
+          // Hide confetti after animation
+          setTimeout(() => {
+            setShowConfetti(false);
+          }, 2000);
+        } else {
+          // Block - save to database
+          await fetch('/api/users/reactions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fromEmail: currentUserEmail,
+              toEmail: profileToProcess,
+              type: 'block',
+            }),
+          });
+
+          const newBlocked = [...blockedProfiles, profileToProcess];
+          setBlockedProfiles(newBlocked);
+          
+          // Remove from skipped if present
+          if (skippedProfiles.includes(profileToProcess)) {
+            const newSkipped = skippedProfiles.filter(id => id !== profileToProcess);
+            setSkippedProfiles(newSkipped);
+            localStorage.setItem('userSkipped', JSON.stringify(newSkipped));
+          }
         }
+      } catch (error) {
+        console.error('Error saving reaction:', error);
       }
-    } catch (error) {
-      console.error('Error saving reaction:', error);
-    }
 
-    setTimeout(() => {
+      // After animation completes, update index
       setSwipeDirection(null);
-      if (currentIndex < profilesToShow.length - 1) {
-        setCurrentIndex(currentIndex + 1);
+      if (currentIdx < profilesToShow.length - 1) {
+        setCurrentIndex(currentIdx + 1);
       } else {
         setCurrentIndex(0);
       }
+      setIsAnimating(false);
     }, 300);
   };
 
   const handleSkip = () => {
-    if (!currentProfile) return;
+    if (!currentProfile || isAnimating) return;
     
+    setIsAnimating(true);
     setSwipeDirection('skip');
     
-    // Add to skipped (localStorage only - temporary)
-    if (!skippedProfiles.includes(currentProfile.email)) {
-      const newSkipped = [...skippedProfiles, currentProfile.email];
-      setSkippedProfiles(newSkipped);
-      localStorage.setItem('userSkipped', JSON.stringify(newSkipped));
-    }
-
+    // Save current profile email and index before any state changes
+    const profileToSkip = currentProfile.email;
+    const currentIdx = currentIndex;
+    
+    // Start animation first, then process in background
     setTimeout(() => {
+      // Add to skipped (localStorage only - temporary)
+      if (!skippedProfiles.includes(profileToSkip)) {
+        const newSkipped = [...skippedProfiles, profileToSkip];
+        setSkippedProfiles(newSkipped);
+        localStorage.setItem('userSkipped', JSON.stringify(newSkipped));
+      }
+
+      // After animation completes, update index
       setSwipeDirection(null);
-      if (currentIndex < profilesToShow.length - 1) {
-        setCurrentIndex(currentIndex + 1);
+      if (currentIdx < profilesToShow.length - 1) {
+        setCurrentIndex(currentIdx + 1);
       } else {
         setCurrentIndex(0);
       }
+      setIsAnimating(false);
     }, 300);
+  };
+
+  const handleSendMessage = async () => {
+    if (!likedProfile || !currentUserEmail) return;
+    
+    try {
+      setShowLikeNotification(false);
+      
+      // Create or get existing chat
+      const response = await fetch('/api/chats', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userEmail: likedProfile.email,
+          currentUserEmail: currentUserEmail,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.matchId) {
+        // Wait a bit to ensure the match is created
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // Navigate to the specific chat
+        router.push(`/chats/${data.matchId}`);
+      } else {
+        console.error('Failed to create chat:', data);
+        alert('Не удалось создать чат');
+      }
+    } catch (error) {
+      console.error('Error creating chat:', error);
+      alert('Ошибка при создании чата');
+    }
+  };
+
+  const handleCloseLikeNotification = () => {
+    setShowLikeNotification(false);
+    setTimeout(() => {
+      setLikedProfile(null);
+    }, 500);
   };
 
   if (isLoading) {
     return (
       <div className="flex flex-col h-screen bg-gray-50">
-        <header className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between flex-shrink-0">
-          <h1 className="text-xl font-bold text-gray-900">Smart Match</h1>
-        </header>
         <main className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto"></div>
@@ -274,10 +366,6 @@ export default function MatchPage() {
   if (profilesToShow.length === 0) {
     return (
       <div className="flex flex-col h-screen bg-gray-50">
-        <header className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between flex-shrink-0">
-          <h1 className="text-xl font-bold text-gray-900">Smart Match</h1>
-        </header>
-
         <main className="flex-1 flex flex-col justify-center items-center p-6">
           <div className="text-center space-y-5 max-w-sm w-full">
             <div className="text-8xl mb-4">🎉</div>
@@ -311,15 +399,14 @@ export default function MatchPage() {
     return null;
   }
 
+  // Check if current profile is from the same city
+  const profileCity = currentProfile.location?.split(',')[0]?.trim() || '';
+  const isSameCity = profileCity.toLowerCase() === currentUserCity.toLowerCase();
+
   return (
     <div className="flex flex-col h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between flex-shrink-0">
-        <h1 className="text-xl font-bold text-gray-900">Smart Match</h1>
-      </header>
-
       {/* Main Content - Profile Card + Buttons */}
-      <main className="flex-1 flex flex-col px-4 py-3 min-h-0 overflow-hidden">
+      <main className="flex-1 flex flex-col px-4 pt-6 pb-3 min-h-0 overflow-hidden">
         <div className="flex flex-col h-full w-full max-w-sm mx-auto">
           {/* Indicator if showing skipped */}
           {showingSkipped && (
@@ -353,9 +440,11 @@ export default function MatchPage() {
                 ) : (
                   <div className="text-8xl">{currentProfile.photo}</div>
                 )}
-                <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-semibold text-gray-700">
-                  📍 {currentProfile.distance > 0 ? `${currentProfile.distance} км` : 'Рядом'}
-                </div>
+                {isSameCity && (
+                  <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-semibold text-gray-700">
+                    📍 {currentProfile.distance > 0 ? `${currentProfile.distance} км` : 'Рядом'}
+                  </div>
+                )}
               </div>
 
               {/* Info Section - Scrollable */}
@@ -457,6 +546,99 @@ export default function MatchPage() {
           </div>
         </div>
       </main>
+
+      {/* Confetti Effect */}
+      {showConfetti && (
+        <div className="fixed inset-0 pointer-events-none z-40 overflow-hidden">
+          {[...Array(30)].map((_, i) => (
+            <div
+              key={i}
+              className="absolute animate-confetti"
+              style={{
+                left: `${Math.random() * 100}%`,
+                top: '-10%',
+                animationDelay: `${Math.random() * 0.5}s`,
+                animationDuration: `${1.5 + Math.random()}s`,
+              }}
+            >
+              <div
+                className="w-2 h-2 rounded-full"
+                style={{
+                  backgroundColor: ['#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#007AFF', '#AF52DE', '#FF2D55'][Math.floor(Math.random() * 7)],
+                  transform: `rotate(${Math.random() * 360}deg)`,
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Backdrop for closing notification */}
+      {showLikeNotification && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={handleCloseLikeNotification}
+        />
+      )}
+
+      {/* Like Notification - Minimal & Slides from bottom */}
+      <div
+        className={`fixed bottom-0 left-0 right-0 z-50 transition-transform duration-500 ease-out ${
+          showLikeNotification ? 'translate-y-0' : 'translate-y-full'
+        }`}
+      >
+        {likedProfile && (
+          <div
+            className="bg-white/95 backdrop-blur-xl shadow-2xl p-5 mx-4 mb-20 rounded-2xl border border-gray-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Compact content */}
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg">
+                <HeartIcon className="w-6 h-6 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-gray-900 text-sm">Добавлено в избранное!</p>
+                <p className="text-xs text-gray-600 truncate">{likedProfile.name}</p>
+              </div>
+            </div>
+
+            {/* Buttons */}
+            <div className="flex gap-2">
+              <button
+                onClick={handleSendMessage}
+                className="flex-1 py-2.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-semibold text-sm shadow-md hover:shadow-lg active:scale-95 transition-all flex items-center justify-center gap-1.5"
+              >
+                <ChatBubbleLeftRightIcon className="w-4 h-4" />
+                Написать
+              </button>
+              <button
+                onClick={handleCloseLikeNotification}
+                className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-semibold text-sm hover:bg-gray-200 active:scale-95 transition-all"
+              >
+                Закрыть
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Confetti Animation Styles */}
+      <style jsx>{`
+        @keyframes confetti {
+          0% {
+            transform: translateY(0) rotate(0deg);
+            opacity: 1;
+          }
+          100% {
+            transform: translateY(100vh) rotate(720deg);
+            opacity: 0;
+          }
+        }
+        .animate-confetti {
+          animation: confetti linear forwards;
+        }
+      `}</style>
 
       <BottomNav />
     </div>

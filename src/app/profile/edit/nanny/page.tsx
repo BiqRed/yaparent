@@ -16,6 +16,7 @@ import {
   XMarkIcon,
   PlusCircleIcon,
 } from '@heroicons/react/24/outline';
+import BackButton from '@/components/BackButton';
 
 interface Review {
   id: string;
@@ -119,67 +120,85 @@ export default function EditNannyProfilePage() {
   const [newLanguage, setNewLanguage] = useState('');
   const [newHours, setNewHours] = useState('');
 
-  // Load user data from localStorage
+  // Load user data from API
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const storedUser = localStorage.getItem('currentUser');
-      
-      if (!storedUser) {
-        // Not logged in - redirect to login
-        router.push('/login');
-        return;
+    const loadUserData = async () => {
+      if (typeof window !== 'undefined') {
+        const email = localStorage.getItem('currentUserEmail');
+        
+        if (!email) {
+          router.push('/login');
+          return;
+        }
+        
+        try {
+          const response = await fetch(`/api/users/current?email=${encodeURIComponent(email)}`);
+          
+          if (!response.ok) {
+            console.error('Failed to fetch user data');
+            router.push('/login');
+            return;
+          }
+
+          const data = await response.json();
+          const user: RegisteredUser = data.user;
+          
+          // Check if user is a nanny
+          if (user.userType !== 'nanny') {
+            router.push('/profile/edit/parent');
+            return;
+          }
+          
+          const userAge = calculateAge(user.birthDate);
+          
+          setFormData({
+            name: user.name || '',
+            age: userAge > 0 ? String(userAge) : '',
+            location: user.location || '',
+            phone: user.phone || '',
+            email: user.email || '',
+            bio: user.bio || 'Опытная няня с педагогическим образованием. Специализируюсь на раннем развитии детей. Люблю творческие занятия и активные игры.',
+            hourlyRate: user.hourlyRate || '800',
+            experience: user.experience || '5',
+            education: user.education || 'Московский педагогический университет, факультет дошкольного образования',
+            ageRange: user.ageRange || '0-6 лет',
+          });
+          
+          // Load photo if exists
+          if (user.photoUrl) {
+            setPhotoUrl(user.photoUrl);
+            setPhotoPreview(user.photoUrl);
+          }
+          
+          // Load specializations if exists
+          if (user.specializations && user.specializations.length > 0) {
+            setSpecializations(user.specializations);
+          }
+          
+          // Load certifications if exists
+          if (user.certifications && user.certifications.length > 0) {
+            setCertifications(user.certifications);
+          }
+          
+          // Load languages if exists
+          if (user.languages && user.languages.length > 0) {
+            setLanguages(user.languages);
+          }
+          
+          // Load available hours if exists
+          if (user.availableHours && user.availableHours.length > 0) {
+            setAvailableHours(user.availableHours);
+          }
+          
+          setDataLoaded(true);
+        } catch (error) {
+          console.error('Error loading user data:', error);
+          router.push('/login');
+        }
       }
-      
-      try {
-        const user: RegisteredUser = JSON.parse(storedUser);
-        const userAge = calculateAge(user.birthDate);
-        
-        setFormData((prev) => ({
-          ...prev,
-          name: user.name || prev.name,
-          age: userAge > 0 ? String(userAge) : prev.age,
-          location: user.location || prev.location,
-          phone: user.phone || prev.phone,
-          email: user.email || prev.email,
-          bio: user.bio || prev.bio,
-          hourlyRate: user.hourlyRate || prev.hourlyRate,
-          experience: user.experience || prev.experience,
-          education: user.education || prev.education,
-          ageRange: user.ageRange || prev.ageRange,
-        }));
-        
-        // Load photo if exists
-        if (user.photoUrl) {
-          setPhotoUrl(user.photoUrl);
-          setPhotoPreview(user.photoUrl);
-        }
-        
-        // Load specializations if exists
-        if (user.specializations && user.specializations.length > 0) {
-          setSpecializations(user.specializations);
-        }
-        
-        // Load certifications if exists
-        if (user.certifications && user.certifications.length > 0) {
-          setCertifications(user.certifications);
-        }
-        
-        // Load languages if exists
-        if (user.languages && user.languages.length > 0) {
-          setLanguages(user.languages);
-        }
-        
-        // Load available hours if exists
-        if (user.availableHours && user.availableHours.length > 0) {
-          setAvailableHours(user.availableHours);
-        }
-        
-        setDataLoaded(true);
-      } catch {
-        router.push('/login');
-        return;
-      }
-    }
+    };
+    
+    loadUserData();
   }, [router]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -228,55 +247,47 @@ export default function EditNannyProfilePage() {
     e.preventDefault();
     setIsLoading(true);
 
-    // Update user data in localStorage
-    if (typeof window !== 'undefined') {
-      const storedUser = localStorage.getItem('currentUser');
-      if (storedUser) {
-        try {
-          const user: RegisteredUser = JSON.parse(storedUser);
-          const originalEmail = user.email; // Save original email for lookup
-          
-          // Update user with new data including all nanny-specific fields
-          const updatedUser: RegisteredUser = {
-            ...user,
-            name: formData.name,
-            email: formData.email,
-            phone: formData.phone,
-            location: formData.location,
-            photoUrl: photoUrl || user.photoUrl,
-            bio: formData.bio,
-            hourlyRate: formData.hourlyRate,
-            experience: formData.experience,
-            education: formData.education,
-            ageRange: formData.ageRange,
-            specializations: specializations,
-            certifications: certifications,
-            languages: languages,
-            availableHours: availableHours,
-          };
-          localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-          
-          // Also update in registeredUsers array using original email
-          const registeredUsersJson = localStorage.getItem('registeredUsers');
-          if (registeredUsersJson) {
-            const registeredUsers: RegisteredUser[] = JSON.parse(registeredUsersJson);
-            const userIndex = registeredUsers.findIndex((u) => u.email === originalEmail);
-            if (userIndex !== -1) {
-              registeredUsers[userIndex] = updatedUser;
-              localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
-            }
-          }
-        } catch (error) {
-          console.error('Error updating user data:', error);
-        }
+    try {
+      const email = localStorage.getItem('currentUserEmail');
+      if (!email) {
+        router.push('/login');
+        return;
       }
-    }
 
-    // Simulate API call
-    setTimeout(() => {
+      // Update user data via API
+      const response = await fetch(`/api/users/current?email=${encodeURIComponent(email)}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          phone: formData.phone,
+          location: formData.location,
+          photoUrl: photoUrl,
+          bio: formData.bio,
+          hourlyRate: formData.hourlyRate,
+          experience: formData.experience,
+          education: formData.education,
+          ageRange: formData.ageRange,
+          specializations: specializations,
+          certifications: certifications,
+          languages: languages,
+          availableHours: availableHours,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update profile');
+      }
+
       setIsLoading(false);
       router.push('/profile');
-    }, 1000);
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      setIsLoading(false);
+      alert('Ошибка при сохранении профиля');
+    }
   };
 
   if (!dataLoaded) {
@@ -293,17 +304,15 @@ export default function EditNannyProfilePage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-6">
       {/* Header */}
-      <div className="bg-gradient-to-r from-green-500 to-teal-500 text-white safe-area-top p-6">
-        <div className="flex items-center justify-between mb-4">
-          <Link href="/profile" className="text-white/90 hover:text-white transition-colors">
-            ← Назад
-          </Link>
-          <div className="flex items-center gap-2">
+      <div className="bg-gradient-to-r from-green-500 to-teal-500 text-white">
+        <BackButton href="/profile" />
+        <div className="px-6 pb-6">
+          <div className="flex items-center gap-2 mb-4">
             <SparklesIcon className="w-5 h-5" />
             <span className="font-semibold">Профиль няни</span>
           </div>
+          <h1 className="text-2xl font-bold">Редактировать профиль</h1>
         </div>
-        <h1 className="text-2xl font-bold">Редактировать профиль</h1>
       </div>
 
       {/* Form */}

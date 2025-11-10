@@ -9,45 +9,36 @@ import {
   LockClosedIcon,
   PhoneIcon,
   MapPinIcon,
-  CalendarIcon,
+  CheckCircleIcon,
   SparklesIcon,
+  UserGroupIcon,
+  HeartIcon,
+  CameraIcon,
 } from '@heroicons/react/24/outline';
-import { CheckCircleIcon } from '@heroicons/react/24/solid';
+import BackButton from '@/components/BackButton';
 
-interface Review {
-  id: string;
-  fromUserId: string;
-  fromUserName: string;
-  rating: number;
-  comment: string;
-  date: string;
-}
+const RUSSIAN_CITIES = [
+  'Москва',
+  'Санкт-Петербург',
+  'Новосибирск',
+  'Екатеринбург',
+  'Казань',
+  'Нижний Новгород',
+  'Челябинск',
+  'Самара',
+  'Омск',
+  'Ростов-на-Дону',
+  'Уфа',
+  'Красноярск',
+];
 
-interface Booking {
-  id: string;
-  clientId: string;
-  date: string;
-  status: 'active' | 'completed' | 'cancelled';
-}
+const MONTHS = [
+  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+];
 
-interface RegisteredUser {
-  name: string;
-  email: string;
-  phone: string;
-  password: string;
-  location: string;
-  birthDate: string;
-  userType: 'parent' | 'nanny';
-  photoUrl?: string;
-  // Geolocation
-  latitude?: number;
-  longitude?: number;
-  // Statistics
-  reviews?: Review[];
-  bookings?: Booking[];
-  friends?: string[]; // Array of user emails
-  rating?: number;
-}
+const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
+const YEARS = Array.from({ length: 100 }, (_, i) => new Date().getFullYear() - i);
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -61,6 +52,9 @@ export default function RegisterPage() {
     birthDate: '',
     userType: '' as 'parent' | 'nanny' | '',
   });
+  const [birthDay, setBirthDay] = useState('');
+  const [birthMonth, setBirthMonth] = useState('');
+  const [birthYear, setBirthYear] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [acceptTerms, setAcceptTerms] = useState(false);
@@ -69,21 +63,49 @@ export default function RegisterPage() {
   const [isRequestingLocation, setIsRequestingLocation] = useState(false);
   const [locationGranted, setLocationGranted] = useState<boolean | null>(null);
 
-  // Check if user is already logged in
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const currentUserEmail = localStorage.getItem('currentUserEmail');
       if (currentUserEmail) {
-        // User is already logged in, redirect to profile
         router.push('/profile');
       }
     }
   }, [router]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const formatPhoneNumber = (value: string) => {
+    // Remove all non-digit characters
+    const cleaned = value.replace(/\D/g, '');
+    
+    // Replace leading 8 with 7
+    let formatted = cleaned;
+    if (formatted.startsWith('8')) {
+      formatted = '7' + formatted.slice(1);
+    }
+    
+    // Ensure it starts with 7
+    if (formatted && !formatted.startsWith('7')) {
+      formatted = '7' + formatted;
+    }
+    
+    // Format: +7 (XXX) XXX XX XX
+    if (formatted.length === 0) return '';
+    if (formatted.length <= 1) return `+${formatted}`;
+    if (formatted.length <= 4) return `+${formatted[0]} (${formatted.slice(1)}`;
+    if (formatted.length <= 7) return `+${formatted[0]} (${formatted.slice(1, 4)}) ${formatted.slice(4)}`;
+    if (formatted.length <= 9) return `+${formatted[0]} (${formatted.slice(1, 4)}) ${formatted.slice(4, 7)} ${formatted.slice(7)}`;
+    return `+${formatted[0]} (${formatted.slice(1, 4)}) ${formatted.slice(4, 7)} ${formatted.slice(7, 9)} ${formatted.slice(9, 11)}`;
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-    // Clear error when user starts typing
+    
+    if (name === 'phone') {
+      const formatted = formatPhoneNumber(value);
+      setFormData((prev) => ({ ...prev, [name]: formatted }));
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    }
+    
     if (errors[name]) {
       setErrors((prev) => {
         const newErrors = { ...prev };
@@ -93,28 +115,41 @@ export default function RegisterPage() {
     }
   };
 
+  const handleBirthDateChange = (type: 'day' | 'month' | 'year', value: string) => {
+    if (type === 'day') setBirthDay(value);
+    if (type === 'month') setBirthMonth(value);
+    if (type === 'year') setBirthYear(value);
+
+    // Update formData.birthDate when all three are selected
+    const day = type === 'day' ? value : birthDay;
+    const month = type === 'month' ? value : birthMonth;
+    const year = type === 'year' ? value : birthYear;
+
+    if (day && month && year) {
+      const monthIndex = String(parseInt(month) + 1).padStart(2, '0');
+      const dayPadded = String(day).padStart(2, '0');
+      setFormData((prev) => ({ ...prev, birthDate: `${year}-${monthIndex}-${dayPadded}` }));
+    }
+  };
+
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Check file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
         setErrors((prev) => ({ ...prev, photo: 'Файл слишком большой. Максимум 5MB' }));
         return;
       }
 
-      // Check file type
       if (!file.type.startsWith('image/')) {
         setErrors((prev) => ({ ...prev, photo: 'Пожалуйста, выберите изображение' }));
         return;
       }
 
-      // Convert to base64
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64String = reader.result as string;
         setPhotoUrl(base64String);
         setPhotoPreview(base64String);
-        // Clear photo error if any
         if (errors.photo) {
           setErrors((prev) => {
             const newErrors = { ...prev };
@@ -181,7 +216,6 @@ export default function RegisterPage() {
     setIsLoading(true);
     setIsRequestingLocation(true);
 
-    // Request geolocation
     let latitude: number | undefined;
     let longitude: number | undefined;
 
@@ -189,9 +223,9 @@ export default function RegisterPage() {
       try {
         const position = await new Promise<GeolocationPosition>((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(resolve, reject, {
-            timeout: 5000, // Reduced timeout to 5 seconds
-            maximumAge: 60000, // Allow cached position up to 1 minute old
-            enableHighAccuracy: false, // Faster, less accurate positioning
+            timeout: 5000,
+            maximumAge: 60000,
+            enableHighAccuracy: false,
           });
         });
         latitude = position.coords.latitude;
@@ -200,7 +234,6 @@ export default function RegisterPage() {
       } catch (error) {
         console.log('Geolocation denied or unavailable:', error);
         setLocationGranted(false);
-        // Continue without geolocation - this is optional
       }
     } else {
       setLocationGranted(false);
@@ -208,7 +241,6 @@ export default function RegisterPage() {
 
     setIsRequestingLocation(false);
 
-    // Сохраняем пользователя в базу данных
     try {
       const response = await fetch('/api/users/register', {
         method: 'POST',
@@ -239,13 +271,11 @@ export default function RegisterPage() {
 
       console.log('User registered successfully:', data.user);
 
-      // Сохраняем только ID текущего пользователя в localStorage
       if (typeof window !== 'undefined') {
         localStorage.setItem('currentUserEmail', data.user.email);
         localStorage.setItem('userType', formData.userType);
       }
 
-      // Redirect based on user type
       setTimeout(() => {
         setIsLoading(false);
         if (formData.userType === 'parent') {
@@ -262,52 +292,42 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FF3B30] to-[#FF9500] flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 flex flex-col">
       {/* Header */}
-      <div className="safe-area-top p-6 text-white">
-        <div className="flex items-center justify-between">
-          <Link
-            href="/"
-            className="text-white/80 hover:text-white transition-colors"
-          >
-            ← Назад
-          </Link>
-          <div className="flex items-center gap-2">
-            <SparklesIcon className="w-6 h-6" />
-            <span className="font-bold text-lg">Ya Родители</span>
-          </div>
-        </div>
-      </div>
+      <BackButton href="/" />
 
       {/* Form Container */}
       <div className="flex-1 px-6 py-8 overflow-y-auto hide-scrollbar">
-        <div className="max-w-md mx-auto">
+        <div className="max-w-md mx-auto pb-8">
           {/* Title */}
-          <div className="text-center mb-8 text-white">
-            <h1 className="text-3xl font-bold mb-2">Регистрация</h1>
-            <p className="text-white/90">
+          <div className="text-center mb-10">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 mb-6">
+              <SparklesIcon className="w-10 h-10 text-white" />
+            </div>
+            <h1 className="text-4xl font-bold mb-3 text-white">Регистрация</h1>
+            <p className="text-white/70 text-lg">
               Присоединяйтесь к сообществу
             </p>
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-5">
             {/* User Type Selection */}
             <div>
-              <label className="block text-white/90 text-sm font-semibold mb-3">
+              <label className="block text-white/90 text-sm font-medium mb-3">
                 Я хочу зарегистрироваться как:
               </label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 <button
                   type="button"
                   onClick={() => setFormData((prev) => ({ ...prev, userType: 'parent' }))}
-                  className={`p-4 rounded-2xl border-2 transition-all ${
+                  className={`p-5 rounded-xl border-2 transition-all ${
                     formData.userType === 'parent'
-                      ? 'bg-white border-white text-[#FF3B30] shadow-lg'
-                      : 'bg-white/20 border-white/50 text-white hover:bg-white/30'
+                      ? 'bg-white border-white text-purple-600 shadow-xl scale-105'
+                      : 'bg-white/10 border-white/30 text-white hover:bg-white/20 hover:border-white/50'
                   }`}
                 >
-                  <div className="text-4xl mb-2">👨‍👩‍👧‍👦</div>
+                  <UserGroupIcon className={`w-12 h-12 mx-auto mb-2 ${formData.userType === 'parent' ? 'text-purple-600' : 'text-white'}`} />
                   <div className="font-bold text-lg">Родитель</div>
                   <div className="text-xs mt-1 opacity-80">
                     Знакомства и поиск нянь
@@ -317,13 +337,13 @@ export default function RegisterPage() {
                 <button
                   type="button"
                   onClick={() => setFormData((prev) => ({ ...prev, userType: 'nanny' }))}
-                  className={`p-4 rounded-2xl border-2 transition-all ${
+                  className={`p-5 rounded-xl border-2 transition-all ${
                     formData.userType === 'nanny'
-                      ? 'bg-white border-white text-[#FF3B30] shadow-lg'
-                      : 'bg-white/20 border-white/50 text-white hover:bg-white/30'
+                      ? 'bg-white border-white text-purple-600 shadow-xl scale-105'
+                      : 'bg-white/10 border-white/30 text-white hover:bg-white/20 hover:border-white/50'
                   }`}
                 >
-                  <div className="text-4xl mb-2">👶</div>
+                  <HeartIcon className={`w-12 h-12 mx-auto mb-2 ${formData.userType === 'nanny' ? 'text-purple-600' : 'text-white'}`} />
                   <div className="font-bold text-lg">Няня</div>
                   <div className="text-xs mt-1 opacity-80">
                     Предложение услуг
@@ -331,7 +351,7 @@ export default function RegisterPage() {
                 </button>
               </div>
               {errors.userType && (
-                <p className="mt-2 text-sm text-white bg-red-500/50 px-3 py-1 rounded-lg">
+                <p className="mt-2 text-sm text-white bg-red-500/80 px-4 py-2 rounded-lg">
                   {errors.userType}
                 </p>
               )}
@@ -339,7 +359,7 @@ export default function RegisterPage() {
 
             {/* Name Field */}
             <div>
-              <label htmlFor="name" className="block text-white/90 text-sm font-semibold mb-2">
+              <label htmlFor="name" className="block text-white/90 text-sm font-medium mb-2">
                 Полное имя
               </label>
               <div className="relative">
@@ -350,12 +370,12 @@ export default function RegisterPage() {
                   name="name"
                   value={formData.name}
                   onChange={handleChange}
-                  className="w-full pl-12 pr-4 py-3.5 bg-white/95 backdrop-blur-sm rounded-2xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all"
+                  className="w-full pl-12 pr-4 py-4 bg-white/95 backdrop-blur-sm rounded-xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all text-gray-900 placeholder:text-gray-400"
                   placeholder="Иван Иванов"
                 />
               </div>
               {errors.name && (
-                <p className="mt-1 text-sm text-white bg-red-500/50 px-3 py-1 rounded-lg">
+                <p className="mt-2 text-sm text-white bg-red-500/80 px-4 py-2 rounded-lg">
                   {errors.name}
                 </p>
               )}
@@ -363,7 +383,7 @@ export default function RegisterPage() {
 
             {/* Email Field */}
             <div>
-              <label htmlFor="email" className="block text-white/90 text-sm font-semibold mb-2">
+              <label htmlFor="email" className="block text-white/90 text-sm font-medium mb-2">
                 Email
               </label>
               <div className="relative">
@@ -374,12 +394,12 @@ export default function RegisterPage() {
                   name="email"
                   value={formData.email}
                   onChange={handleChange}
-                  className="w-full pl-12 pr-4 py-3.5 bg-white/95 backdrop-blur-sm rounded-2xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all"
+                  className="w-full pl-12 pr-4 py-4 bg-white/95 backdrop-blur-sm rounded-xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all text-gray-900 placeholder:text-gray-400"
                   placeholder="ivan@example.com"
                 />
               </div>
               {errors.email && (
-                <p className="mt-1 text-sm text-white bg-red-500/50 px-3 py-1 rounded-lg">
+                <p className="mt-2 text-sm text-white bg-red-500/80 px-4 py-2 rounded-lg">
                   {errors.email}
                 </p>
               )}
@@ -387,7 +407,7 @@ export default function RegisterPage() {
 
             {/* Phone Field */}
             <div>
-              <label htmlFor="phone" className="block text-white/90 text-sm font-semibold mb-2">
+              <label htmlFor="phone" className="block text-white/90 text-sm font-medium mb-2">
                 Телефон
               </label>
               <div className="relative">
@@ -398,12 +418,13 @@ export default function RegisterPage() {
                   name="phone"
                   value={formData.phone}
                   onChange={handleChange}
-                  className="w-full pl-12 pr-4 py-3.5 bg-white/95 backdrop-blur-sm rounded-2xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all"
-                  placeholder="+7 (900) 000-00-00"
+                  className="w-full pl-12 pr-4 py-4 bg-white/95 backdrop-blur-sm rounded-xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all text-gray-900 placeholder:text-gray-400"
+                  placeholder="+7 (900) 000 00 00"
+                  maxLength={18}
                 />
               </div>
               {errors.phone && (
-                <p className="mt-1 text-sm text-white bg-red-500/50 px-3 py-1 rounded-lg">
+                <p className="mt-2 text-sm text-white bg-red-500/80 px-4 py-2 rounded-lg">
                   {errors.phone}
                 </p>
               )}
@@ -411,23 +432,33 @@ export default function RegisterPage() {
 
             {/* Location Field */}
             <div>
-              <label htmlFor="location" className="block text-white/90 text-sm font-semibold mb-2">
+              <label htmlFor="location" className="block text-white/90 text-sm font-medium mb-2">
                 Город
               </label>
               <div className="relative">
-                <MapPinIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
+                <MapPinIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none z-10" />
+                <select
                   id="location"
                   name="location"
                   value={formData.location}
                   onChange={handleChange}
-                  className="w-full pl-12 pr-4 py-3.5 bg-white/95 backdrop-blur-sm rounded-2xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all"
-                  placeholder="Москва"
-                />
+                  className="w-full pl-12 pr-10 py-4 bg-white/95 backdrop-blur-sm rounded-xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all text-gray-900 appearance-none cursor-pointer"
+                >
+                  <option value="" disabled>Выберите город</option>
+                  {RUSSIAN_CITIES.map((city) => (
+                    <option key={city} value={city}>
+                      {city}
+                    </option>
+                  ))}
+                </select>
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
               </div>
               {errors.location && (
-                <p className="mt-1 text-sm text-white bg-red-500/50 px-3 py-1 rounded-lg">
+                <p className="mt-2 text-sm text-white bg-red-500/80 px-4 py-2 rounded-lg">
                   {errors.location}
                 </p>
               )}
@@ -435,30 +466,83 @@ export default function RegisterPage() {
 
             {/* Birth Date Field */}
             <div>
-              <label htmlFor="birthDate" className="block text-white/90 text-sm font-semibold mb-2">
-                Дата рождения (необязательно)
+              <label className="block text-white/90 text-sm font-medium mb-2">
+                Дата рождения <span className="text-white/50">(необязательно)</span>
               </label>
-              <div className="relative">
-                <CalendarIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="date"
-                  id="birthDate"
-                  name="birthDate"
-                  value={formData.birthDate}
-                  onChange={handleChange}
-                  className="w-full pl-12 pr-4 py-3.5 bg-white/95 backdrop-blur-sm rounded-2xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all"
-                />
+              <div className="grid grid-cols-3 gap-3">
+                {/* Day */}
+                <div className="relative">
+                  <select
+                    value={birthDay}
+                    onChange={(e) => handleBirthDateChange('day', e.target.value)}
+                    className="w-full px-4 py-4 bg-white/95 backdrop-blur-sm rounded-xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all text-gray-900 appearance-none cursor-pointer"
+                  >
+                    <option value="">День</option>
+                    {DAYS.map((day) => (
+                      <option key={day} value={day}>
+                        {day}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Month */}
+                <div className="relative">
+                  <select
+                    value={birthMonth}
+                    onChange={(e) => handleBirthDateChange('month', e.target.value)}
+                    className="w-full px-4 py-4 bg-white/95 backdrop-blur-sm rounded-xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all text-gray-900 appearance-none cursor-pointer"
+                  >
+                    <option value="">Месяц</option>
+                    {MONTHS.map((month, index) => (
+                      <option key={month} value={index}>
+                        {month}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Year */}
+                <div className="relative">
+                  <select
+                    value={birthYear}
+                    onChange={(e) => handleBirthDateChange('year', e.target.value)}
+                    className="w-full px-4 py-4 bg-white/95 backdrop-blur-sm rounded-xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all text-gray-900 appearance-none cursor-pointer"
+                  >
+                    <option value="">Год</option>
+                    {YEARS.map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
               </div>
             </div>
 
             {/* Photo Upload Field */}
             <div>
-              <label htmlFor="photo" className="block text-white/90 text-sm font-semibold mb-2">
-                Фото профиля (необязательно)
+              <label htmlFor="photo" className="block text-white/90 text-sm font-medium mb-2">
+                Фото профиля <span className="text-white/50">(необязательно)</span>
               </label>
               <div className="flex items-center gap-4">
                 {photoPreview && (
-                  <div className="relative w-20 h-20 rounded-full overflow-hidden bg-white shadow-lg flex-shrink-0">
+                  <div className="relative w-20 h-20 rounded-xl overflow-hidden bg-white shadow-lg flex-shrink-0">
                     <img
                       src={photoPreview}
                       alt="Preview"
@@ -468,11 +552,12 @@ export default function RegisterPage() {
                 )}
                 <label
                   htmlFor="photo"
-                  className="flex-1 cursor-pointer bg-white/95 backdrop-blur-sm rounded-2xl border-2 border-transparent hover:border-white hover:bg-white transition-all"
+                  className="flex-1 cursor-pointer bg-white/95 backdrop-blur-sm rounded-xl border-2 border-transparent hover:border-white hover:bg-white transition-all"
                 >
-                  <div className="px-4 py-3.5 text-center">
+                  <div className="px-4 py-4 text-center flex items-center justify-center gap-2">
+                    <CameraIcon className="w-5 h-5 text-gray-600" />
                     <span className="text-gray-600 font-medium">
-                      {photoPreview ? 'Изменить фото' : '📷 Выбрать фото'}
+                      {photoPreview ? 'Изменить фото' : 'Выбрать фото'}
                     </span>
                   </div>
                   <input
@@ -485,7 +570,7 @@ export default function RegisterPage() {
                 </label>
               </div>
               {errors.photo && (
-                <p className="mt-1 text-sm text-white bg-red-500/50 px-3 py-1 rounded-lg">
+                <p className="mt-2 text-sm text-white bg-red-500/80 px-4 py-2 rounded-lg">
                   {errors.photo}
                 </p>
               )}
@@ -493,7 +578,7 @@ export default function RegisterPage() {
 
             {/* Password Field */}
             <div>
-              <label htmlFor="password" className="block text-white/90 text-sm font-semibold mb-2">
+              <label htmlFor="password" className="block text-white/90 text-sm font-medium mb-2">
                 Пароль
               </label>
               <div className="relative">
@@ -504,12 +589,12 @@ export default function RegisterPage() {
                   name="password"
                   value={formData.password}
                   onChange={handleChange}
-                  className="w-full pl-12 pr-4 py-3.5 bg-white/95 backdrop-blur-sm rounded-2xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all"
+                  className="w-full pl-12 pr-4 py-4 bg-white/95 backdrop-blur-sm rounded-xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all text-gray-900 placeholder:text-gray-400"
                   placeholder="Минимум 6 символов"
                 />
               </div>
               {errors.password && (
-                <p className="mt-1 text-sm text-white bg-red-500/50 px-3 py-1 rounded-lg">
+                <p className="mt-2 text-sm text-white bg-red-500/80 px-4 py-2 rounded-lg">
                   {errors.password}
                 </p>
               )}
@@ -517,7 +602,7 @@ export default function RegisterPage() {
 
             {/* Confirm Password Field */}
             <div>
-              <label htmlFor="confirmPassword" className="block text-white/90 text-sm font-semibold mb-2">
+              <label htmlFor="confirmPassword" className="block text-white/90 text-sm font-medium mb-2">
                 Подтвердите пароль
               </label>
               <div className="relative">
@@ -528,12 +613,12 @@ export default function RegisterPage() {
                   name="confirmPassword"
                   value={formData.confirmPassword}
                   onChange={handleChange}
-                  className="w-full pl-12 pr-4 py-3.5 bg-white/95 backdrop-blur-sm rounded-2xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all"
+                  className="w-full pl-12 pr-4 py-4 bg-white/95 backdrop-blur-sm rounded-xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all text-gray-900 placeholder:text-gray-400"
                   placeholder="Повторите пароль"
                 />
               </div>
               {errors.confirmPassword && (
-                <p className="mt-1 text-sm text-white bg-red-500/50 px-3 py-1 rounded-lg">
+                <p className="mt-2 text-sm text-white bg-red-500/80 px-4 py-2 rounded-lg">
                   {errors.confirmPassword}
                 </p>
               )}
@@ -550,9 +635,9 @@ export default function RegisterPage() {
                     className="peer sr-only"
                   />
                   <div className="w-6 h-6 bg-white/90 rounded-lg border-2 border-white/50 peer-checked:bg-white peer-checked:border-white transition-all" />
-                  <CheckCircleIcon className="absolute inset-0 w-6 h-6 text-[#FF3B30] opacity-0 peer-checked:opacity-100 transition-opacity" />
+                  <CheckCircleIcon className="absolute inset-0 w-6 h-6 text-purple-600 opacity-0 peer-checked:opacity-100 transition-opacity" />
                 </div>
-                <span className="text-sm text-white/90 leading-relaxed group-hover:text-white transition-colors">
+                <span className="text-sm text-white/80 leading-relaxed group-hover:text-white transition-colors">
                   Я принимаю{' '}
                   <Link href="/terms" className="underline font-semibold">
                     условия использования
@@ -564,69 +649,69 @@ export default function RegisterPage() {
                 </span>
               </label>
               {errors.terms && (
-                <p className="mt-2 text-sm text-white bg-red-500/50 px-3 py-1 rounded-lg">
+                <p className="mt-2 text-sm text-white bg-red-500/80 px-4 py-2 rounded-lg">
                   {errors.terms}
                 </p>
               )}
             </div>
 
             {/* Submit Button */}
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full mt-6 py-4 bg-white text-[#FF3B30] rounded-2xl font-bold text-lg shadow-2xl hover:shadow-xl transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
-                >
-                  {isRequestingLocation ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                          fill="none"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        />
-                      </svg>
-                      Запрос геолокации...
-                    </span>
-                  ) : isLoading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                          fill="none"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        />
-                      </svg>
-                      Регистрация...
-                    </span>
-                  ) : (
-                    'Зарегистрироваться'
-                  )}
-                </button>
-              </form>
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full mt-8 py-4 bg-white text-purple-600 rounded-xl font-bold text-lg shadow-2xl hover:shadow-xl hover:scale-[1.02] transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+            >
+              {isRequestingLocation ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      fill="none"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                  Запрос геолокации...
+                </span>
+              ) : isLoading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      fill="none"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                  Регистрация...
+                </span>
+              ) : (
+                'Зарегистрироваться'
+              )}
+            </button>
+          </form>
 
           {/* Login Link */}
-          <div className="mt-6 text-center text-white/90">
-            <p>
+          <div className="mt-8 text-center">
+            <p className="text-white/70">
               Уже есть аккаунт?{' '}
-              <Link href="/login" className="font-bold underline hover:text-white transition-colors">
+              <Link href="/login" className="font-bold text-white hover:underline transition-all">
                 Войти
               </Link>
             </p>
@@ -639,4 +724,3 @@ export default function RegisterPage() {
     </div>
   );
 }
-

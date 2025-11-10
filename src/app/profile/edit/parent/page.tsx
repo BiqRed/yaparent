@@ -11,6 +11,7 @@ import {
   XMarkIcon,
   SparklesIcon,
 } from '@heroicons/react/24/outline';
+import BackButton from '@/components/BackButton';
 import type { Kid } from '@/types';
 
 interface Review {
@@ -83,53 +84,71 @@ export default function EditParentProfilePage() {
 
   const [newInterest, setNewInterest] = useState('');
 
-  // Load user data from localStorage
+  // Load user data from API
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const storedUser = localStorage.getItem('currentUser');
-      
-      if (!storedUser) {
-        // Not logged in - redirect to login
-        router.push('/login');
-        return;
+    const loadUserData = async () => {
+      if (typeof window !== 'undefined') {
+        const email = localStorage.getItem('currentUserEmail');
+        
+        if (!email) {
+          router.push('/login');
+          return;
+        }
+        
+        try {
+          const response = await fetch(`/api/users/current?email=${encodeURIComponent(email)}`);
+          
+          if (!response.ok) {
+            console.error('Failed to fetch user data');
+            router.push('/login');
+            return;
+          }
+
+          const data = await response.json();
+          const user: RegisteredUser = data.user;
+          
+          // Check if user is a parent
+          if (user.userType !== 'parent') {
+            router.push('/profile/edit/nanny');
+            return;
+          }
+          
+          const userAge = calculateAge(user.birthDate);
+          
+          setFormData({
+            name: user.name || '',
+            age: userAge > 0 ? String(userAge) : '',
+            location: user.location || '',
+            phone: user.phone || '',
+            email: user.email || '',
+            bio: user.bio || '',
+          });
+          
+          // Load photo if exists
+          if (user.photoUrl) {
+            setPhotoUrl(user.photoUrl);
+            setPhotoPreview(user.photoUrl);
+          }
+          
+          // Load kids if exists
+          if (user.kids && user.kids.length > 0) {
+            setKids(user.kids);
+          }
+          
+          // Load interests if exists
+          if (user.interests && user.interests.length > 0) {
+            setInterests(user.interests);
+          }
+          
+          setDataLoaded(true);
+        } catch (error) {
+          console.error('Error loading user data:', error);
+          router.push('/login');
+        }
       }
-      
-      try {
-        const user: RegisteredUser = JSON.parse(storedUser);
-        const userAge = calculateAge(user.birthDate);
-        
-        setFormData((prev) => ({
-          ...prev,
-          name: user.name || prev.name,
-          age: userAge > 0 ? String(userAge) : prev.age,
-          location: user.location || prev.location,
-          phone: user.phone || prev.phone,
-          email: user.email || prev.email,
-          bio: user.bio || prev.bio,
-        }));
-        
-        // Load photo if exists
-        if (user.photoUrl) {
-          setPhotoUrl(user.photoUrl);
-          setPhotoPreview(user.photoUrl);
-        }
-        
-        // Load kids if exists
-        if (user.kids && user.kids.length > 0) {
-          setKids(user.kids);
-        }
-        
-        // Load interests if exists
-        if (user.interests && user.interests.length > 0) {
-          setInterests(user.interests);
-        }
-        
-        setDataLoaded(true);
-      } catch {
-        router.push('/login');
-        return;
-      }
-    }
+    };
+    
+    loadUserData();
   }, [router]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -192,49 +211,41 @@ export default function EditParentProfilePage() {
     e.preventDefault();
     setIsLoading(true);
 
-    // Update user data in localStorage
-    if (typeof window !== 'undefined') {
-      const storedUser = localStorage.getItem('currentUser');
-      if (storedUser) {
-        try {
-          const user: RegisteredUser = JSON.parse(storedUser);
-          const originalEmail = user.email; // Save original email for lookup
-          
-          // Update user with new data including profile-specific fields
-          const updatedUser: RegisteredUser = {
-            ...user,
-            name: formData.name,
-            email: formData.email,
-            phone: formData.phone,
-            location: formData.location,
-            photoUrl: photoUrl || user.photoUrl,
-            bio: formData.bio,
-            kids: kids,
-            interests: interests,
-          };
-          localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-          
-          // Also update in registeredUsers array using original email
-          const registeredUsersJson = localStorage.getItem('registeredUsers');
-          if (registeredUsersJson) {
-            const registeredUsers: RegisteredUser[] = JSON.parse(registeredUsersJson);
-            const userIndex = registeredUsers.findIndex((u) => u.email === originalEmail);
-            if (userIndex !== -1) {
-              registeredUsers[userIndex] = updatedUser;
-              localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
-            }
-          }
-        } catch (error) {
-          console.error('Error updating user data:', error);
-        }
+    try {
+      const email = localStorage.getItem('currentUserEmail');
+      if (!email) {
+        router.push('/login');
+        return;
       }
-    }
 
-    // Simulate API call
-    setTimeout(() => {
+      // Update user data via API
+      const response = await fetch(`/api/users/current?email=${encodeURIComponent(email)}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          phone: formData.phone,
+          location: formData.location,
+          photoUrl: photoUrl,
+          bio: formData.bio,
+          kids: kids,
+          interests: interests,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update profile');
+      }
+
       setIsLoading(false);
       router.push('/profile');
-    }, 1000);
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      setIsLoading(false);
+      alert('Ошибка при сохранении профиля');
+    }
   };
 
   if (!dataLoaded) {
@@ -251,17 +262,15 @@ export default function EditParentProfilePage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-6">
       {/* Header */}
-      <div className="bg-gradient-to-r from-purple-500 to-pink-500 text-white safe-area-top p-6">
-        <div className="flex items-center justify-between mb-4">
-          <Link href="/profile" className="text-white/90 hover:text-white transition-colors">
-            ← Назад
-          </Link>
-          <div className="flex items-center gap-2">
+      <div className="bg-gradient-to-r from-purple-500 to-pink-500 text-white">
+        <BackButton href="/profile" />
+        <div className="px-6 pb-6">
+          <div className="flex items-center gap-2 mb-4">
             <SparklesIcon className="w-5 h-5" />
             <span className="font-semibold">Профиль родителя</span>
           </div>
+          <h1 className="text-2xl font-bold">Редактировать профиль</h1>
         </div>
-        <h1 className="text-2xl font-bold">Редактировать профиль</h1>
       </div>
 
       {/* Form */}

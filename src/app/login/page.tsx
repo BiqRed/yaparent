@@ -6,18 +6,9 @@ import Link from 'next/link';
 import {
   EnvelopeIcon,
   LockClosedIcon,
-  SparklesIcon,
+  HandRaisedIcon,
 } from '@heroicons/react/24/outline';
-
-interface RegisteredUser {
-  name: string;
-  email: string;
-  phone: string;
-  password: string;
-  location: string;
-  birthDate: string;
-  userType: 'parent' | 'nanny';
-}
+import BackButton from '@/components/BackButton';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -29,12 +20,10 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
-  // Check if user is already logged in
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const currentUserEmail = localStorage.getItem('currentUserEmail');
       if (currentUserEmail) {
-        // User is already logged in, redirect to profile
         router.push('/profile');
       }
     }
@@ -43,7 +32,6 @@ export default function LoginPage() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-    // Clear error when user starts typing
     if (errors[name]) {
       setErrors((prev) => {
         const newErrors = { ...prev };
@@ -106,7 +94,6 @@ export default function LoginPage() {
 
       console.log('Login successful:', data.user);
 
-      // Save user email to localStorage (minimal data)
       if (typeof window !== 'undefined') {
         localStorage.setItem('currentUserEmail', data.user.email);
         localStorage.setItem('userType', data.user.userType);
@@ -114,7 +101,6 @@ export default function LoginPage() {
 
       setIsLoading(false);
 
-      // Redirect based on user type
       if (data.user.userType === 'nanny') {
         router.push('/nanny');
       } else {
@@ -128,33 +114,22 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FF3B30] to-[#FF9500] flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 flex flex-col">
       {/* Header */}
-      <div className="safe-area-top p-6 text-white">
-        <div className="flex items-center justify-between">
-          <Link
-            href="/"
-            className="text-white/80 hover:text-white transition-colors"
-          >
-            ← Назад
-          </Link>
-          <div className="flex items-center gap-2">
-            <SparklesIcon className="w-6 h-6" />
-            <span className="font-bold text-lg">Ya Родители</span>
-          </div>
-        </div>
-      </div>
+      <BackButton href="/" />
 
       {/* Form Container */}
       <div className="flex-1 px-6 py-12 flex items-center justify-center">
         <div className="w-full max-w-md">
           {/* Title */}
-          <div className="text-center mb-8 text-white">
-            <div className="flex items-center justify-center w-20 h-20 bg-white/20 rounded-full backdrop-blur-sm mx-auto mb-6">
-              <SparklesIcon className="w-10 h-10 text-white" />
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 mb-6">
+              <HandRaisedIcon className="w-10 h-10 text-white" />
             </div>
-            <h1 className="text-3xl font-bold mb-2">С возвращением!</h1>
-            <p className="text-white/90">
+            <h1 className="text-4xl font-bold mb-3 text-white">
+              С возвращением
+            </h1>
+            <p className="text-white/70 text-lg">
               Войдите в свой аккаунт
             </p>
           </div>
@@ -163,7 +138,7 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email Field */}
             <div>
-              <label htmlFor="email" className="block text-white/90 text-sm font-semibold mb-2">
+              <label htmlFor="email" className="block text-white/90 text-sm font-medium mb-2">
                 Email
               </label>
               <div className="relative">
@@ -174,12 +149,12 @@ export default function LoginPage() {
                   name="email"
                   value={formData.email}
                   onChange={handleChange}
-                  className="w-full pl-12 pr-4 py-3.5 bg-white/95 backdrop-blur-sm rounded-2xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all"
+                  className="w-full pl-12 pr-4 py-4 bg-white/95 backdrop-blur-sm rounded-xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all text-gray-900 placeholder:text-gray-400"
                   placeholder="ivan@example.com"
                 />
               </div>
               {errors.email && (
-                <p className="mt-1 text-sm text-white bg-red-500/50 px-3 py-1 rounded-lg">
+                <p className="mt-2 text-sm text-white bg-red-500/80 px-4 py-2 rounded-lg">
                   {errors.email}
                 </p>
               )}
@@ -187,7 +162,7 @@ export default function LoginPage() {
 
             {/* Password Field */}
             <div>
-              <label htmlFor="password" className="block text-white/90 text-sm font-semibold mb-2">
+              <label htmlFor="password" className="block text-white/90 text-sm font-medium mb-2">
                 Пароль
               </label>
               <div className="relative">
@@ -198,33 +173,33 @@ export default function LoginPage() {
                   name="password"
                   value={formData.password}
                   onChange={handleChange}
-                  className="w-full pl-12 pr-4 py-3.5 bg-white/95 backdrop-blur-sm rounded-2xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all"
+                  className="w-full pl-12 pr-4 py-4 bg-white/95 backdrop-blur-sm rounded-xl border-2 border-transparent focus:border-white focus:bg-white outline-none transition-all text-gray-900 placeholder:text-gray-400"
                   placeholder="Введите пароль"
                 />
               </div>
               {errors.password && (
-                <p className="mt-1 text-sm text-white bg-red-500/50 px-3 py-1 rounded-lg">
+                <p className="mt-2 text-sm text-white bg-red-500/80 px-4 py-2 rounded-lg">
                   {errors.password}
                 </p>
               )}
             </div>
 
             {/* Remember Me & Forgot Password */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between pt-2">
               <label className="flex items-center gap-2 cursor-pointer group">
                 <input
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-5 h-5 rounded border-2 border-white/50 bg-white/20 checked:bg-white checked:border-white transition-all cursor-pointer"
+                  className="w-5 h-5 rounded-md border-2 border-white/50 bg-white/20 checked:bg-white checked:border-white transition-all cursor-pointer accent-purple-600"
                 />
-                <span className="text-sm text-white/90 group-hover:text-white transition-colors">
+                <span className="text-sm text-white/80 group-hover:text-white transition-colors">
                   Запомнить меня
                 </span>
               </label>
               <Link
                 href="/forgot-password"
-                className="text-sm text-white/90 hover:text-white font-semibold transition-colors"
+                className="text-sm text-white/80 hover:text-white font-medium transition-colors"
               >
                 Забыли пароль?
               </Link>
@@ -234,7 +209,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full mt-6 py-4 bg-white text-[#FF3B30] rounded-2xl font-bold text-lg shadow-2xl hover:shadow-xl transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+              className="w-full mt-8 py-4 bg-white text-purple-600 rounded-xl font-bold text-lg shadow-2xl hover:shadow-xl hover:scale-[1.02] transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
               {isLoading ? (
                 <span className="flex items-center justify-center gap-2">
@@ -262,41 +237,11 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Divider */}
-          <div className="relative my-8">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-white/30" />
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-4 bg-transparent text-white/80 font-semibold">
-                или
-              </span>
-            </div>
-          </div>
-
-          {/* Social Login Buttons */}
-          <div className="space-y-3">
-            <button 
-              disabled
-              className="w-full py-3.5 bg-white/10 backdrop-blur-sm text-white/50 rounded-2xl font-semibold transition-all flex items-center justify-center gap-3 cursor-not-allowed opacity-60 relative"
-            >
-              <LockClosedIcon className="w-5 h-5" />
-              <span className="flex items-center gap-2">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm0 22C6.486 22 2 17.514 2 12S6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z"/>
-                  <circle cx="12" cy="12" r="8" fill="#FC3F1D"/>
-                  <path fill="#FFFFFF" d="M7 14.5h10v2H7v-2zm0-4h10v2H7v-2z"/>
-                </svg>
-                Войти через Яндекс ID
-              </span>
-            </button>
-          </div>
-
           {/* Register Link */}
-          <div className="mt-8 text-center text-white/90">
-            <p>
+          <div className="mt-8 text-center">
+            <p className="text-white/70">
               Нет аккаунта?{' '}
-              <Link href="/register" className="font-bold underline hover:text-white transition-colors">
+              <Link href="/register" className="font-bold text-white hover:underline transition-all">
                 Зарегистрироваться
               </Link>
             </p>
@@ -309,4 +254,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

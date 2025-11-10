@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import BottomNav from '@/components/BottomNav';
+import BackButton from '@/components/BackButton';
 import {
   StarIcon,
   HeartIcon,
@@ -378,13 +379,8 @@ export default function ViewProfilePage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* Header */}
-      <div className="px-4 pt-6">
-        <Link
-          href="/match"
-          className="inline-block mb-4 text-gray-700 bg-white px-4 py-2 rounded-full font-semibold hover:bg-gray-100 transition-colors shadow-sm"
-        >
-          ← Назад
-        </Link>
+      <div className="bg-white">
+        <BackButton href="/match" className="text-gray-700" />
       </div>
 
       {/* Profile Info */}

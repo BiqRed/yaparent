@@ -21,7 +21,7 @@
 }
 
 body {
-  background: var(--background);
+  background: linear-gradient(to bottom right, rgb(79, 70, 229), rgb(147, 51, 234), rgb(236, 72, 153));
   color: var(--text-primary);
   font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
   overscroll-behavior: none;
