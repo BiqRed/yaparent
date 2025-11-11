@@ -18,32 +18,38 @@
 
 * {
   -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
 }
 
 body {
+  min-height: 100vh;
+  min-height: 100dvh;
   background: linear-gradient(to bottom right, rgb(79, 70, 229), rgb(147, 51, 234), rgb(236, 72, 153));
   color: var(--text-primary);
   font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
   overscroll-behavior: none;
   touch-action: pan-y;
   user-select: none;
+  margin: 0;
+  
+  /* Device safe area - no background here */
+  padding-top: max(env(safe-area-inset-top), var(--tg-safe-area-inset-top, 0px));
+  padding-bottom: max(env(safe-area-inset-bottom), var(--tg-safe-area-inset-bottom, 0px));
+  padding-left: max(env(safe-area-inset-left), var(--tg-safe-area-inset-left, 0px));
+  padding-right: max(env(safe-area-inset-right), var(--tg-safe-area-inset-right, 0px));
 }
 
-/* Mobile optimizations */
-@supports (padding: max(0px)) {
-  body {
-    /* Margin for device boundaries (no background) */
-    margin-top: max(env(safe-area-inset-top), var(--tg-safe-area-inset-top, 0px));
-    margin-bottom: max(env(safe-area-inset-bottom), var(--tg-safe-area-inset-bottom, 0px));
-    margin-left: max(env(safe-area-inset-left), var(--tg-safe-area-inset-left, 0px));
-    margin-right: max(env(safe-area-inset-right), var(--tg-safe-area-inset-right, 0px));
-    
-    /* Padding for Telegram UI elements (with background) */
-    padding-top: var(--tg-content-safe-area-inset-top, 0px);
-    padding-bottom: var(--tg-content-safe-area-inset-bottom, 0px);
-    padding-left: var(--tg-content-safe-area-inset-left, 0px);
-    padding-right: var(--tg-content-safe-area-inset-right, 0px);
-  }
+/* Telegram content safe area wrapper */
+body > * {
+  /* Content safe area - with background, content pushed down */
+  padding-top: var(--tg-content-safe-area-inset-top, 0px);
+  padding-bottom: var(--tg-content-safe-area-inset-bottom, 0px);
+  padding-left: var(--tg-content-safe-area-inset-left, 0px);
+  padding-right: var(--tg-content-safe-area-inset-right, 0px);
 }
 
 /* Smooth scrolling for iOS */
