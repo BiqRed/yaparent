@@ -36,9 +36,12 @@ body {
   user-select: none;
   margin: 0;
   
-  /* Device safe area - no background here */
+  /* Device safe area */
+  /* Top: padding (with background) */
   padding-top: max(env(safe-area-inset-top), var(--tg-safe-area-inset-top, 0px));
-  padding-bottom: max(env(safe-area-inset-bottom), var(--tg-safe-area-inset-bottom, 0px));
+  /* Bottom: margin (no background) */
+  margin-bottom: max(env(safe-area-inset-bottom), var(--tg-safe-area-inset-bottom, 0px));
+  /* Sides: padding (with background) */
   padding-left: max(env(safe-area-inset-left), var(--tg-safe-area-inset-left, 0px));
   padding-right: max(env(safe-area-inset-right), var(--tg-safe-area-inset-right, 0px));
 }
