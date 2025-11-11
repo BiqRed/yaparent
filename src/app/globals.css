@@ -32,10 +32,10 @@ body {
 /* Mobile optimizations */
 @supports (padding: max(0px)) {
   body {
-    padding-top: max(env(safe-area-inset-top), var(--tg-safe-area-inset-top, 0px));
-    padding-bottom: max(env(safe-area-inset-bottom), var(--tg-safe-area-inset-bottom, 0px));
-    padding-left: max(env(safe-area-inset-left), var(--tg-safe-area-inset-left, 0px));
-    padding-right: max(env(safe-area-inset-right), var(--tg-safe-area-inset-right, 0px));
+    padding-top: max(env(safe-area-inset-top), var(--tg-content-safe-area-inset-top, 0px));
+    padding-bottom: max(env(safe-area-inset-bottom), var(--tg-content-safe-area-inset-bottom, 0px));
+    padding-left: max(env(safe-area-inset-left), var(--tg-content-safe-area-inset-left, 0px));
+    padding-right: max(env(safe-area-inset-right), var(--tg-content-safe-area-inset-right, 0px));
   }
 }
 
@@ -87,22 +87,30 @@ body {
 
 /* Safe area support */
 .safe-area-bottom {
-  padding-bottom: max(env(safe-area-inset-bottom), var(--tg-safe-area-inset-bottom, 0px));
+  padding-bottom: max(env(safe-area-inset-bottom), var(--tg-content-safe-area-inset-bottom, 0px));
 }
 
 .safe-area-top {
-  padding-top: max(env(safe-area-inset-top), var(--tg-safe-area-inset-top, 0px));
+  padding-top: max(env(safe-area-inset-top), var(--tg-content-safe-area-inset-top, 0px));
 }
 
 .safe-area-left {
-  padding-left: max(env(safe-area-inset-left), var(--tg-safe-area-inset-left, 0px));
+  padding-left: max(env(safe-area-inset-left), var(--tg-content-safe-area-inset-left, 0px));
 }
 
 .safe-area-right {
-  padding-right: max(env(safe-area-inset-right), var(--tg-safe-area-inset-right, 0px));
+  padding-right: max(env(safe-area-inset-right), var(--tg-content-safe-area-inset-right, 0px));
 }
 
-/* Telegram WebApp safe area support */
+/* Telegram WebApp content safe area - includes Telegram UI elements */
+.tg-content-safe-area {
+  padding-top: var(--tg-content-safe-area-inset-top, 0px);
+  padding-bottom: var(--tg-content-safe-area-inset-bottom, 0px);
+  padding-left: var(--tg-content-safe-area-inset-left, 0px);
+  padding-right: var(--tg-content-safe-area-inset-right, 0px);
+}
+
+/* Telegram WebApp system safe area - only device boundaries */
 .tg-safe-area {
   padding-top: var(--tg-safe-area-inset-top, 0px);
   padding-bottom: var(--tg-safe-area-inset-bottom, 0px);
