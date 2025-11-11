@@ -22,6 +22,10 @@ declare global {
           show: () => void;
           hide: () => void;
         };
+        initData?: string;
+        initDataUnsafe?: {
+          user?: unknown;
+        };
       };
     };
   }
@@ -30,34 +34,58 @@ declare global {
 export default function BackButton({ href, className = '' }: BackButtonProps) {
   const router = useRouter();
   const [isTelegramWebApp, setIsTelegramWebApp] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const defaultTextColor = className.includes('text-') ? '' : 'text-white/80 hover:text-white';
   
   useEffect(() => {
-    // Check if running in Telegram WebApp
-    const isWebApp = typeof window !== 'undefined' &&
-                     window.Telegram?.WebApp?.BackButton !== undefined;
+    // Wait for Telegram WebApp script to load
+    const checkTelegramWebApp = () => {
+      if (typeof window !== 'undefined' && window.Telegram?.WebApp) {
+        const webApp = window.Telegram.WebApp;
+        
+        // Check if we're actually in Telegram WebApp context
+        // initData will be present only in real Telegram WebApp
+        const isInTelegram = !!(webApp.initData || webApp.initDataUnsafe?.user);
+        
+        setIsTelegramWebApp(isInTelegram);
+        setIsLoading(false);
+        
+        if (isInTelegram && webApp.BackButton) {
+          const backButton = webApp.BackButton;
+          
+          // Define the callback function
+          const handleBackClick = () => {
+            router.push(href);
+          };
+          
+          // Set up the Telegram back button
+          backButton.onClick(handleBackClick);
+          backButton.show();
+          
+          // Cleanup function
+          return () => {
+            backButton.offClick(handleBackClick);
+            backButton.hide();
+          };
+        }
+      } else {
+        setIsLoading(false);
+      }
+    };
     
-    setIsTelegramWebApp(isWebApp);
+    // Check immediately
+    checkTelegramWebApp();
     
-    if (isWebApp && window.Telegram?.WebApp?.BackButton) {
-      const backButton = window.Telegram.WebApp.BackButton;
-      
-      // Define the callback function
-      const handleBackClick = () => {
-        router.push(href);
-      };
-      
-      // Set up the Telegram back button
-      backButton.onClick(handleBackClick);
-      backButton.show();
-      
-      // Cleanup function
-      return () => {
-        backButton.offClick(handleBackClick);
-        backButton.hide();
-      };
-    }
+    // Also check after a short delay to ensure script is loaded
+    const timer = setTimeout(checkTelegramWebApp, 100);
+    
+    return () => clearTimeout(timer);
   }, [href, router]);
+  
+  // Show nothing while checking for Telegram WebApp
+  if (isLoading) {
+    return null;
+  }
   
   // If running in Telegram WebApp, don't render the custom button
   if (isTelegramWebApp) {
