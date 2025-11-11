@@ -32,10 +32,14 @@ body {
 /* Mobile optimizations */
 @supports (padding: max(0px)) {
   body {
-    padding-top: max(env(safe-area-inset-top), var(--tg-content-safe-area-inset-top, 0px));
-    padding-bottom: max(env(safe-area-inset-bottom), var(--tg-content-safe-area-inset-bottom, 0px));
-    padding-left: max(env(safe-area-inset-left), var(--tg-content-safe-area-inset-left, 0px));
-    padding-right: max(env(safe-area-inset-right), var(--tg-content-safe-area-inset-right, 0px));
+    /* For Telegram: safe-area (device) + content-safe-area (Telegram UI) */
+    padding-top: calc(
+      max(env(safe-area-inset-top), var(--tg-safe-area-inset-top, 0px)) +
+      var(--tg-content-safe-area-inset-top, 0px)
+    );
+    padding-bottom: max(env(safe-area-inset-bottom), var(--tg-safe-area-inset-bottom, 0px));
+    padding-left: max(env(safe-area-inset-left), var(--tg-safe-area-inset-left, 0px));
+    padding-right: max(env(safe-area-inset-right), var(--tg-safe-area-inset-right, 0px));
   }
 }
 
